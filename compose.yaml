@@ -1,0 +1,19 @@
+# Local development database only. The server scaffold does not connect yet.
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: psst
+      POSTGRES_PASSWORD: psst_local_only
+      POSTGRES_DB: psst
+    ports:
+      - "127.0.0.1:${PSST_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U psst -d psst"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  postgres_data:
