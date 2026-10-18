@@ -27,6 +27,42 @@ func (r *Reader) InspectSchema(ctx context.Context) (Schema, error) {
 		return Schema{}, fmt.Errorf("begin schema inspection: %w", err)
 	}
 	defer tx.Rollback()
+	report, err := inspectSchema(ctx, tx)
+	if err != nil {
+		return Schema{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Schema{}, fmt.Errorf("finish schema inspection: %w", err)
+	}
+	return report, nil
+}
+
+func columnNames(ctx context.Context, tx *sql.Tx, table string) (map[string]bool, error) {
+	// Bound metadata work and fail closed for unusually wide tables.
+	rows, err := tx.QueryContext(ctx, "SELECT lower(name) FROM pragma_table_info(?) LIMIT 513", table)
+	if err != nil {
+		return nil, fmt.Errorf("inspect column metadata: %w", err)
+	}
+	defer rows.Close()
+	names := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("decode column metadata: %w", err)
+		}
+		names[name] = true
+		if len(names) > 512 {
+			return nil, errors.New("table exceeds supported metadata column limit")
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate column metadata: %w", err)
+	}
+	return names, nil
+}
+
+func inspectSchema(ctx context.Context, tx *sql.Tx) (Schema, error) {
 	required := []tableSpec{
 		{"chat", []string{"guid"}, true},
 		{"message", []string{"guid", "text", "date", "is_from_me", "handle_id"}, true},
@@ -65,32 +101,5 @@ func (r *Reader) InspectSchema(ctx context.Context) (Schema, error) {
 			}
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return Schema{}, fmt.Errorf("finish schema inspection: %w", err)
-	}
 	return report, nil
-}
-
-func columnNames(ctx context.Context, tx *sql.Tx, table string) (map[string]bool, error) {
-	// Bound metadata work and fail closed for unusually wide tables.
-	rows, err := tx.QueryContext(ctx, "SELECT lower(name) FROM pragma_table_info(?) LIMIT 513", table)
-	if err != nil {
-		return nil, fmt.Errorf("inspect column metadata: %w", err)
-	}
-	defer rows.Close()
-	names := make(map[string]bool)
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("decode column metadata: %w", err)
-		}
-		names[name] = true
-		if len(names) > 512 {
-			return nil, errors.New("table exceeds supported metadata column limit")
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate column metadata: %w", err)
-	}
-	return names, nil
 }

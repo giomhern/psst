@@ -1,72 +1,61 @@
-// Package cli implements the terminal client's command dispatch.
+// Package cli builds and executes the terminal client's Cobra commands.
 package cli
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
-	"runtime"
-	"time"
 
+	"github.com/giomhern/psst/internal/domain"
 	"github.com/giomhern/psst/internal/personal"
+	"github.com/spf13/cobra"
 )
 
-// Run executes one CLI command. Only doctor probes Personal access and schema.
+// The CLI owns this interface because it consumes these two capabilities.
+// *personal.Reader satisfies it implicitly, without importing the CLI package.
+type conversationReader interface {
+	ListConversations(context.Context, int) ([]domain.Conversation, error)
+	Close() error
+}
+
+type dependencies struct {
+	checkDatabase func(context.Context) personal.DatabaseCheck
+	openReader    func(context.Context) (conversationReader, error)
+}
+
+// Run executes one command. Building commands has no Personal filesystem effects;
+// doctor and personal chats acquire their dependencies only when selected.
 func Run(ctx context.Context, args []string, out io.Writer) error {
-	return run(ctx, args, out, personal.CheckDatabase)
+	return execute(ctx, args, out, dependencies{
+		checkDatabase: personal.CheckDatabase,
+		openReader:    func(ctx context.Context) (conversationReader, error) { return personal.Open(ctx) },
+	})
 }
 
-// Inject the one operation doctor needs; tests never inspect real Messages data.
-func run(ctx context.Context, args []string, out io.Writer, checkDatabase func(context.Context) personal.DatabaseCheck) error {
-	if len(args) == 0 {
-		return help(out)
+func execute(ctx context.Context, args []string, out io.Writer, deps dependencies) error {
+	root := &cobra.Command{
+		Use:               "psst",
+		Short:             "Terminal-native Personal and Sessions messaging",
+		Long:              "Psst provides read-only Personal diagnostics and chat listing. Hosted Sessions, history browsing, and the interactive TUI are under development.",
+		Args:              cobra.NoArgs,
+		SilenceErrors:     true,
+		SilenceUsage:      true,
+		RunE:              func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	}
-	switch args[0] {
-	case "help", "-h", "--help":
-		if len(args) != 1 {
-			return fmt.Errorf("help takes no arguments")
-		}
-		return help(out)
-	case "doctor":
-		if len(args) != 1 {
-			return fmt.Errorf("doctor takes no arguments")
-		}
-		return doctor(ctx, out, checkDatabase)
-	default:
-		return fmt.Errorf("unknown command %q (run psst --help)", args[0])
+	root.SetOut(out)
+	root.SetErr(out)
+	if args == nil {
+		args = []string{}
 	}
-}
-
-func help(out io.Writer) error {
-	_, err := fmt.Fprint(out, `Psst — terminal-native messaging
-
-Usage:
-  psst doctor    Check read-only Messages access and SQLite schema
-  psst --help    Show this help
-
-Personal messaging, hosted Sessions, and the TUI are under development.
-`)
-	return err
-}
-
-func doctor(ctx context.Context, out io.Writer, checkDatabase func(context.Context) personal.DatabaseCheck) error {
-	if _, err := fmt.Fprintf(out, "Platform: %s/%s\nGo: %s\n", runtime.GOOS, runtime.GOARCH, runtime.Version()); err != nil {
-		return err
-	}
-	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	check := checkDatabase(probeCtx)
-	if _, err := fmt.Fprintf(out, `Personal database: %s
-%s
-Automation and message-format checks are not implemented.
-Sessions: not implemented.
-No message rows were queried or uploaded; no database writes were requested.
-`, check.Status, check.Detail); err != nil {
-		return err
-	}
-	if check.Status != personal.DatabaseCompatible {
-		return errors.New("personal database diagnostic did not pass")
-	}
-	return nil
+	root.SetArgs(args)
+	root.AddCommand(&cobra.Command{
+		Use:   "doctor",
+		Short: "Check read-only Messages access and SQLite schema",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return doctor(cmd.Context(), cmd.OutOrStdout(), deps.checkDatabase)
+		},
+	})
+	root.AddCommand(newPersonalCommand(deps.openReader))
+	return root.ExecuteContext(ctx)
 }

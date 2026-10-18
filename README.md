@@ -16,17 +16,17 @@ Hosted Sessions are not end-to-end encrypted in the initial design.
 
 This is the **foundation scaffold**, not a working messaging client yet.
 
-Available now: CLI help, privacy-preserving file-access and SQLite schema diagnostics,
-a local HTTP server with a liveness endpoint, graceful shutdown, development
+Available now: Cobra CLI commands, read-only conversation listing, privacy-preserving
+file-access and SQLite schema diagnostics, a local HTTP server with a liveness endpoint, graceful shutdown, development
 PostgreSQL setup, tests, and CI. The server does not connect to PostgreSQL yet.
-Conversation queries, authentication, room APIs, WebSockets, and the TUI are not implemented.
+Message history, authentication, room APIs, WebSockets, and the TUI are not implemented.
 
 ## Quick start
 
 Install Go **1.27.2 or newer**. Docker with Compose is optional until database work
 begins. Personal will require macOS; the Sessions server targets Linux and macOS.
-The Personal adapter uses the pinned pure-Go `modernc.org/sqlite` driver; no C
-compiler is required for ordinary builds. Dependencies download on first use.
+The CLI uses Cobra and the Personal adapter uses the pinned pure-Go
+`modernc.org/sqlite` driver; no C compiler is required for ordinary builds. Dependencies download on first use.
 
 ```sh
 git clone https://github.com/giomhern/psst.git
@@ -52,6 +52,31 @@ Stop with Ctrl-C. Change the listening address with `-addr 127.0.0.1:9090`.
 The default listener is loopback HTTP for local development. A production deployment
 will require HTTPS/WSS and the authentication/lifecycle controls in the architecture.
 `/healthz` indicates process liveness only, not database readiness.
+
+## Browse Personal chats
+
+```sh
+go run ./cmd/psst personal chats
+go run ./cmd/psst personal chats --limit 25
+go run ./cmd/psst personal chats --help
+```
+
+On macOS, `personal chats` prints local chat IDs and quoted titles. The default is
+10 chats; `--limit` accepts 1–100. Named chats use their display name; others fall
+back to the stored Messages chat identifier. Empty databases get a clear message.
+Titles are limited to 200 Unicode characters and terminal controls are escaped.
+
+Ordering uses the newest **locally stored message row ID**, with chat ID as a
+stable tie-breaker; chats without messages follow. This is not sent-time ordering:
+late synchronization can affect the list. Timestamp conversion comes with history
+browsing. Group chats appear once, and titles can contain personal identifiers;
+share command output only when intended. Message bodies are not selected, and
+nothing is uploaded or logged.
+
+The command validates schema within the same read transaction as the listing,
+uses the existing read-only guards and a three-second operation deadline, and
+closes its reader even on query/output failure. Unsupported platforms do not open
+the database. Run `psst doctor` if access or schema checks fail.
 
 ## Doctor diagnostics
 
@@ -115,9 +140,10 @@ cmd/
   psst/                    CLI executable
   psst-server/             Server executable
 internal/
-  cli/                     Command dispatch and foundation doctor output
+  cli/                     Cobra commands, diagnostics, and safe table output
+  domain/                  Shared conversation summaries and listing limits
   personal/                Safe Messages diagnostics
-    sqlite/                Read-only SQLite adapter and synthetic fixtures
+    sqlite/                Read-only schema/chat queries and synthetic fixtures
   server/                  HTTP startup and shutdown ownership
   sessions/httpapi/        HTTP router and endpoint tests
 migrations/                Migration conventions; schema work comes next

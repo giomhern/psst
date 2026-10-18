@@ -1,8 +1,9 @@
 # Personal SQLite adapter
 
-The adapter checks a minimum schema baseline for planned conversation/message
-queries. It does not read message rows, list contacts, or validate Apple's
-undocumented formats across every macOS release.
+The adapter checks a minimum schema baseline and lists bounded chat summaries.
+Listing reads chat titles and message row IDs for ordering, but never selects
+message bodies or resolves contacts. It does not validate Apple's undocumented
+formats across every macOS release. The doctor still inspects metadata only.
 
 ## Safety boundary
 
@@ -11,8 +12,9 @@ undocumented formats across every macOS release.
   characters cannot inject SQLite settings. Missing databases are not created.
 - Every pool connection enables `query_only`, a 250 ms busy timeout, and
   `trusted_schema=OFF`. The pool allows one connection; it is not exported.
-- The public API provides `Open`, `InspectSchema`, and `Close`. There is no public
-  generic query/exec handle, migration, repair, checkpoint, or filesystem-delete API.
+- The public API provides `Open`, `InspectSchema`, `ListConversations`, and `Close`.
+  There is no public generic query/exec handle, migration, repair, checkpoint, or
+  filesystem-delete API.
 - Inspection uses SQLite metadata in a read transaction, with context cancellation
   and bounded column enumeration. It accepts extra columns, but fails closed when
   a table exceeds 512 columns or required fields are absent. Views do not stand
@@ -47,6 +49,27 @@ Compatibility means these prerequisites exist. Future query slices must validate
 actual date encodings, nullable text, rich/attachment-only messages, joins, and
 pagination against synthetic fixtures before enabling those behaviors.
 
+## Conversation queries
+
+`ListConversations(ctx, limit)` validates a 1–100 limit, starts a read transaction,
+checks the baseline, detects the optional `chat.display_name` column, then selects
+at most `limit` summaries. Display names fall back to GUIDs and an untitled label;
+SQL bounds titles to 200 characters. The command escapes terminal control characters
+before rendering any title. No message-body column is selected.
+
+A correlated aggregate finds each chat's highest existing message row ID without
+duplicating chats through group membership or duplicate join rows. Chats are ordered
+by that local row ID, then chat row ID; empty chats follow. Do not equate this order
+with sent timestamps or implement timestamp guessing here. The result bound does
+not imply only that many database rows are examined; the deadline bounds query
+execution and future tuning should use measured query plans without modifying
+Apple's indexes.
+
+The `personal.Reader` application boundary resolves the local database on macOS
+and converts backend errors into safe messages. The CLI owns a small reader interface
+and is responsible for closing the opened reader. No raw driver error crosses into
+terminal error output. Schema inspection and data selection share one snapshot.
+
 ## Verification
 
 Tests create temporary synthetic SQLite databases from `testdata/baseline.sql`.
@@ -54,7 +77,13 @@ Only test setup opens a writable connection. Tests attempt INSERT, UPDATE, DELET
 CREATE, DROP, and persistent PRAGMA changes through the reader and verify rejection.
 They also disable `query_only` on a synthetic reader to verify `mode=ro` independently.
 
-Additional tests cover new/replacement connections, safely encoded filenames,
+Conversation tests cover group-chat deduplication, orphan links, deterministic
+ordering and limits, empty chats, optional/missing columns, nullable titles, Unicode
+truncation, WAL updates, and unchanged source bytes. Cobra tests verify argument
+validation before opening the database, title escaping, cancellation, and cleanup
+on output or query failures.
+
+Additional adapter tests cover new/replacement connections, safely encoded filenames,
 missing and malformed files, unsupported schemas, cancellation, lock contention,
 WAL schema visibility, and later commits on a live connection. Synthetic main
 and WAL bytes are compared around inspection; shared-memory locking bytes are

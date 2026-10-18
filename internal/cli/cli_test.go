@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -71,5 +72,16 @@ func TestDoctorBoundsProbeAndPropagatesCancellation(t *testing.T) {
 			t.Fatal("probe is missing its bounded deadline")
 		}
 		return personal.DatabaseCheck{Status: personal.DatabaseUnavailable, Detail: "canceled"}
+	})
+}
+
+// Diagnostic tests inject only the doctor operation. Any unexpected chat
+// access is blocked instead of falling through to the real Messages database.
+func run(ctx context.Context, args []string, out io.Writer, check func(context.Context) personal.DatabaseCheck) error {
+	return execute(ctx, args, out, dependencies{
+		checkDatabase: check,
+		openReader: func(context.Context) (conversationReader, error) {
+			return nil, errors.New("unexpected Personal access")
+		},
 	})
 }

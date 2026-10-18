@@ -2,6 +2,7 @@ package personal
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 )
@@ -18,4 +19,14 @@ func CheckDatabase(ctx context.Context) DatabaseCheck {
 		return fileCheck
 	}
 	return checkSchema(ctx, filepath.Join(home, filepath.FromSlash(databasePath)))
+}
+
+// Open opens the current user's Messages database read-only. It does not inspect
+// or list conversation data until the caller invokes a reader method.
+func Open(ctx context.Context) (*Reader, error) {
+	home, err := os.UserHomeDir()
+	if err != nil || !filepath.IsAbs(home) {
+		return nil, errors.New("could not locate an absolute user home directory")
+	}
+	return openReader(ctx, filepath.Join(home, filepath.FromSlash(databasePath)))
 }

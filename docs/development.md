@@ -6,12 +6,11 @@
 argument parsing, wiring, and exit handling. Shared application code lives under
 `internal/`, which Go prevents unrelated external modules from importing.
 
-The foundation implements `internal/cli`, `internal/personal` (including `sqlite`),
-`internal/server`, and `internal/sessions/httpapi`. Add these planned packages with their first behavior:
+The foundation implements `internal/cli`, `internal/domain`, `internal/personal`
+(including `sqlite`), `internal/server`, and `internal/sessions/httpapi`. Add these planned packages with their first behavior:
 
 | Planned location | Responsibility |
 | --- | --- |
-| `internal/domain` | Shared values genuinely needed by more than one capability |
 | `internal/personal/applescript` | Explicit automation requests and uncertain outcomes |
 | `internal/personal/watcher` | Bounded polling and refresh coordination |
 | `internal/sessions/service` | Room, membership, and authorization rules |
@@ -42,8 +41,9 @@ under a package's `testdata/` when needed.
 ## Next runnable slices
 
 The macOS doctor now checks filesystem access and the SQLite schema read-only.
-Next, introduce bounded conversation listing through a small consumer-owned reader
-interface and Cobra commands, backed by the adapter and synthetic fixtures.
+Bounded conversation listing now runs through a small CLI-owned reader interface
+and Cobra commands, backed by the adapter and synthetic fixtures. Next, implement
+`personal read <chat>` with tested timestamp conversion and keyset pagination.
 Build session persistence before delivery acknowledgements, using real PostgreSQL integration
 tests for transaction and locking behavior. Add dependencies and migrations only
 when the corresponding slice needs them.
@@ -90,3 +90,40 @@ alone do not establish SQLite compatibility or the cause of a permission denial.
   Database cancellation and the busy timeout keep lock contention bounded.
 
 See [SQLite safety and test contracts](sqlite.md) before extending this adapter.
+
+## Cobra and conversation-listing concepts
+
+Cobra represents each command as a `cobra.Command` value. `AddCommand` builds the
+`psst → personal → chats` tree. `Args: cobra.NoArgs` rejects positional arguments
+before work starts; `RunE` executes an operation and returns its error. The command
+binds `--limit` to a local variable using `IntVar(&limit, ...)`, then validates it
+before opening a database. Commands are constructed afresh per execution; there
+are no global command objects, mutable global flags, or `init` registration hooks.
+
+The CLI defines the interface it needs:
+
+```go
+type conversationReader interface {
+    ListConversations(context.Context, int) ([]domain.Conversation, error)
+    Close() error
+}
+```
+
+`*personal.Reader` satisfies it implicitly. Tests supply a stub implementing the
+same methods, so help and validation tests never inspect real Messages data.
+An opener function delays database acquisition until the chosen command runs.
+`ExecuteContext` passes cancellation down to the operation and SQLite queries.
+
+The adapter converts SQL rows into `domain.Conversation` values. `sql.NullInt64`
+can represent the absent latest-message row for an empty chat. The data model
+contains no SQL driver types, so a later TUI can consume it independently.
+
+`listChats` has a named error result so a deferred function can combine a close
+failure with an existing output/query failure using `errors.Join`. `tabwriter`
+aligns output columns; `strconv.QuoteToGraphic` escapes title control characters
+while preserving printable Unicode. Titles are intended command output, never logs.
+Cobra's error and usage printing are silenced so `main` reports failures once.
+
+See [Cobra's user guide](https://github.com/spf13/cobra/blob/main/site/content/user_guide.md)
+for command and flag APIs. We use Cobra for the client; the server's existing
+single `-addr` flag still uses the standard library. Bubble Tea is not added yet.
