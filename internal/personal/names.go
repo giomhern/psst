@@ -2,6 +2,7 @@ package personal
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -22,23 +23,7 @@ func ContactsAccess(ctx context.Context, authorize bool) (string, error) {
 }
 
 func resolveTitles(ctx context.Context, chats []domain.Conversation, resolver nameResolver) ([]domain.Conversation, error) {
-	var handles []string
-	for _, chat := range chats {
-		if !chat.ExplicitTitle {
-			handles = append(handles, chat.Participants...)
-		}
-	}
-	var names map[string]string
-	if resolver != nil && len(handles) != 0 {
-		lookupCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-		var err error
-		names, err = resolver.Lookup(lookupCtx, handles)
-		cancel()
-		// Optional lookup failure must not hide local chats.
-		if err != nil {
-			names = nil
-		}
-	}
+	names, _ := lookupNames(ctx, chats, resolver)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -65,4 +50,31 @@ func resolveTitles(ctx context.Context, chats []domain.Conversation, resolver na
 		chat.Title = string(title)
 	}
 	return chats, nil
+}
+
+// Both listing and diagnostics use the same optional lookup budget and fallbacks.
+func lookupNames(ctx context.Context, chats []domain.Conversation, resolver nameResolver) (map[string]string, string) {
+	var handles []string
+	for _, chat := range chats {
+		if !chat.ExplicitTitle {
+			handles = append(handles, chat.Participants...)
+		}
+	}
+	var names map[string]string
+	status := "skipped"
+	if resolver != nil && len(handles) != 0 {
+		lookupCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		var err error
+		names, err = resolver.Lookup(lookupCtx, handles)
+		cancel()
+		status = "completed"
+		if err != nil {
+			names = nil
+			status = "unavailable"
+			if errors.Is(err, context.DeadlineExceeded) {
+				status = "timeout"
+			}
+		}
+	}
+	return names, status
 }

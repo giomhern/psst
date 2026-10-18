@@ -36,7 +36,7 @@ func newPersonalCommand(deps dependencies) *cobra.Command {
 		},
 	}
 	chats.Flags().IntVar(&limit, "limit", 10, "Maximum chats to show (1–100)")
-	parent.AddCommand(chats, newContactsCommand(deps.contactsAccess))
+	parent.AddCommand(chats, newContactsCommand(deps))
 	return parent
 }
 

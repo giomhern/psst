@@ -18,18 +18,20 @@ type conversationReader interface {
 }
 
 type dependencies struct {
-	checkDatabase  func(context.Context) personal.DatabaseCheck
-	openReader     func(context.Context) (conversationReader, error)
-	contactsAccess func(context.Context, bool) (string, error)
+	checkDatabase    func(context.Context) personal.DatabaseCheck
+	openReader       func(context.Context) (conversationReader, error)
+	contactsAccess   func(context.Context, bool) (string, error)
+	diagnoseContacts func(context.Context) (personal.ContactDiagnostics, error)
 }
 
 // Run executes one command. Building commands has no Personal filesystem effects;
 // doctor and personal chats acquire their dependencies only when selected.
 func Run(ctx context.Context, args []string, out io.Writer) error {
 	return execute(ctx, args, out, dependencies{
-		checkDatabase:  personal.CheckDatabase,
-		contactsAccess: personal.ContactsAccess,
-		openReader:     func(ctx context.Context) (conversationReader, error) { return personal.Open(ctx) },
+		checkDatabase:    personal.CheckDatabase,
+		contactsAccess:   personal.ContactsAccess,
+		diagnoseContacts: personal.DiagnoseContacts,
+		openReader:       func(ctx context.Context) (conversationReader, error) { return personal.Open(ctx) },
 	})
 }
 

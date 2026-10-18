@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/giomhern/psst/internal/personal"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,7 @@ func TestContactCommandsAreExplicitAndDoNotOpenMessages(t *testing.T) {
 func TestContactHelpAndInvalidArgumentsNeverRequestAccess(t *testing.T) {
 	for _, args := range [][]string{
 		{"personal", "contacts", "--help"}, {"personal", "contacts", "authorize", "--help"},
+		{"personal", "contacts", "diagnose", "--help"}, {"personal", "contacts", "diagnose", "extra"},
 		{"personal", "contacts", "authorize", "extra"}, {"personal", "contacts", "status", "--unknown"},
 	} {
 		var out bytes.Buffer
@@ -67,5 +69,27 @@ func TestContactFailuresAndCancellationAreSafe(t *testing.T) {
 	err = execute(ctx, []string{"personal", "contacts", "authorize"}, &out, dependencies{contactsAccess: func(ctx context.Context, _ bool) (string, error) { return "", ctx.Err() }})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation = %v", err)
+	}
+}
+
+func TestContactDiagnosePrintsOnlySummary(t *testing.T) {
+	var out bytes.Buffer
+	err := execute(context.Background(), []string{"personal", "contacts", "diagnose"}, &out, dependencies{
+		contactsAccess: func(_ context.Context, authorize bool) (string, error) {
+			if authorize {
+				t.Fatal("diagnostics requested permission")
+			}
+			return "authorized", nil
+		},
+		diagnoseContacts: func(ctx context.Context) (personal.ContactDiagnostics, error) {
+			if _, ok := ctx.Deadline(); !ok {
+				t.Fatal("diagnostics missing deadline")
+			}
+			return personal.ContactDiagnostics{Chats: 10, NamedChats: 2, Identifiers: 8, Matched: 0, Lookup: "timeout"}, nil
+		},
+	})
+	want := "Contacts: authorized\nChats checked: 10\nStored chat names: 2\nDistinct participant identifiers: 8\nLookup: timeout\nMatched identifiers: 0\n"
+	if err != nil || out.String() != want {
+		t.Fatalf("output = %q, error = %v", out.String(), err)
 	}
 }

@@ -59,3 +59,30 @@ References: [CNContactStore](https://developer.apple.com/documentation/contacts/
 [phone matching](https://developer.apple.com/documentation/contacts/cncontact/predicateforcontacts(matching:)),
 [email matching](https://developer.apple.com/documentation/contacts/cncontact/predicateforcontacts(matchingemailaddress:)),
 and [name formatting](https://developer.apple.com/documentation/contacts/cncontactformatter).
+
+## Troubleshooting missing names
+
+Authorization and a successful name lookup are separate. If permission is granted
+but chat titles still show identifiers, run:
+
+```sh
+go run ./cmd/psst personal contacts diagnose
+```
+
+This explicitly reads participant metadata for the ten most recent chats and
+performs the same bounded Contacts lookup as listing. It prints only counts and
+fixed statuses, never names, identifiers, message text, or native error details.
+It does not request permission or modify Messages/Contacts.
+
+- `Lookup: timeout`: the lookup exceeded its 1.5-second budget.
+- `Lookup: unavailable`: the helper or Contacts lookup failed. The authorization
+  status above it can reveal missing helpers or permission problems.
+- `Lookup: completed` with zero matches: the helper completed but returned no
+  usable unambiguous names for the requested participants.
+- `Lookup: skipped`: there were no eligible participants or no resolver.
+- A high stored-name count with few identifiers means stored chat display names
+  bypassed contact matching; these counts help identify that separate case.
+
+Share this summary to investigate further; there is no need to share private
+phone numbers, email addresses, or contact records. Automated checks use synthetic
+fixtures; this command runs against real local data only when explicitly invoked.

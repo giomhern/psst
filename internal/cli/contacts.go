@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newContactsCommand(access func(context.Context, bool) (string, error)) *cobra.Command {
+func newContactsCommand(deps dependencies) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "contacts",
 		Short: "Manage optional local contact-name access",
@@ -32,7 +32,7 @@ func newContactsCommand(access func(context.Context, bool) (string, error)) *cob
 				}
 				ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 				defer cancel()
-				status, err := access(ctx, authorize)
+				status, err := deps.contactsAccess(ctx, authorize)
 				if err != nil {
 					if ctx.Err() != nil {
 						return fmt.Errorf("contacts operation stopped: %w", ctx.Err())
@@ -67,5 +67,28 @@ func newContactsCommand(access func(context.Context, bool) (string, error)) *cob
 			},
 		})
 	}
+	parent.AddCommand(&cobra.Command{
+		Use:   "diagnose",
+		Short: "Check recent chat name lookup; print only counts and status",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, cancel := context.WithTimeout(cmd.Context(), 3*time.Second)
+			defer cancel()
+			status, err := deps.contactsAccess(ctx, false)
+			if err != nil {
+				return errors.New("could not check Contacts availability")
+			}
+			// Print only known statuses from the Contacts adapter.
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Contacts:", status); err != nil {
+				return err
+			}
+			report, err := deps.diagnoseContacts(ctx)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Chats checked: %d\nStored chat names: %d\nDistinct participant identifiers: %d\nLookup: %s\nMatched identifiers: %d\n", report.Chats, report.NamedChats, report.Identifiers, report.Lookup, report.Matched)
+			return err
+		},
+	})
 	return parent
 }
