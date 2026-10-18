@@ -46,27 +46,6 @@ private struct ContactsHelper {
         return request
     }
 
-    static func name(for handle: String, store: CNContactStore) throws -> String? {
-        let predicate: NSPredicate
-        if handle.contains("@") {
-            predicate = CNContact.predicateForContacts(matchingEmailAddress: handle)
-        } else {
-            let allowed = CharacterSet(charactersIn: "+0123456789 ()-.")
-            guard handle.unicodeScalars.allSatisfy({ allowed.contains($0) }),
-                  handle.filter({ $0.isNumber }).count >= 3 else { return nil }
-            predicate = CNContact.predicateForContacts(matching: CNPhoneNumber(stringValue: handle))
-        }
-        let request = CNContactFetchRequest(keysToFetch: [CNContactFormatter.descriptorForRequiredKeys(for: .fullName)])
-        request.predicate = predicate
-        request.unifyResults = true
-        var matches: [String?] = []
-        try store.enumerateContacts(with: request) { contact, stop in
-            matches.append(CNContactFormatter.string(from: contact, style: .fullName))
-            if matches.count >= 2 { stop.pointee = true }
-        }
-        return ContactNames.unambiguous(matches)
-    }
-
     static func main() async {
         let args = Array(CommandLine.arguments.dropFirst())
         if args == ["--help"] {
@@ -90,7 +69,7 @@ private struct ContactsHelper {
                 }
                 let store = CNContactStore()
                 let batch = ContactBatch.resolve(request.handles) { handle in
-                    try name(for: handle, store: store)
+                    try ContactLookup.name(for: handle, store: store)
                 }
                 emit(Response(status: authorization, names: batch.names, failure: batch.failure))
             default: emit(Response(status: "unavailable"))

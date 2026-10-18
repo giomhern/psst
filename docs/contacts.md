@@ -20,8 +20,12 @@ Depending on macOS attribution, settings may identify the helper or the responsi
 terminal/app. Rebuilding/relocating the binary may require reauthorization.
 
 The helper uses Apple's phone/email predicates and full-name formatter, not custom
-suffix matching. It reads formatting keys for matching contacts only, and stops
-after two unified matches to detect ambiguity. Ambiguous, absent, inaccessible,
+suffix matching. It uses `unifiedContacts(matching:keysToFetch:)`, Apple's predicate-fetch API,
+and reads formatting keys for matching contacts only. It accepts exactly one
+unified match; absent or multiple matches keep the identifier. The framework
+returns all matches for each exact predicate, without a caller-supplied result
+limit; the helper rejects ambiguity before formatting. It does not enumerate the
+whole address book. Ambiguous, absent, inaccessible,
 or nameless contacts keep the identifier. One failed lookup does not discard
 successful names for other participants in the same batch. These names may differ from Messages'
 nicknames and name/photo-sharing presentation. No contacts are saved or modified.
@@ -95,3 +99,10 @@ its protocol response was invalid. `request_invalid` means request validation fa
 Unknown native errors become `lookup_failed`. Categories contain no native error
 messages or record data. Successful matches survive per-identifier failures.
 Rebuild/install the helper with `make contacts` after updating native source.
+
+The `contacts_data` category represents `CNErrorDomain` code 2, a framework
+read failure. It does not by itself establish data corruption or a permission
+problem. The helper now uses Apple's direct unified-contact predicate fetch
+instead of fetch-request enumeration for phone/email searches. Synthetic store
+injection verifies this path without opening the real contact store; whether it
+resolves a particular machine's framework failure requires local validation.

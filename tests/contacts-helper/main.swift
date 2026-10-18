@@ -1,8 +1,21 @@
 import Foundation
+import Contacts
+
+private final class SyntheticContactStore: ContactFetching {
+    var contacts: [CNContact] = []
+    var failure: Error? = nil
+    var calls = 0
+    func unifiedContacts(matching predicate: NSPredicate, keysToFetch keys: [CNKeyDescriptor]) throws -> [CNContact] {
+        calls += 1
+        if let failure { throw failure }
+        return contacts
+    }
+}
+
 
 @main
 struct ContactNamesTests {
-    static func main() {
+    static func main() throws {
         precondition(ContactNames.unambiguous([]) == nil)
         precondition(ContactNames.unambiguous([nil]) == nil)
         precondition(ContactNames.unambiguous(["  "]) == nil)
@@ -29,6 +42,28 @@ struct ContactNamesTests {
             precondition(ContactBatch.failureCategory(NSError(domain: "CNErrorDomain", code: code)) == category)
         }
         precondition(ContactBatch.failureCategory(NSError(domain: "private", code: 400)) == "lookup_failed")
-        print("Synthetic Contacts helper name and partial-failure tests passed")
+        let store = SyntheticContactStore()
+        let contact = CNMutableContact()
+        contact.givenName = "Alex"
+        store.contacts = [contact]
+        let phoneName = try ContactLookup.name(for: "+15550000001", store: store)
+        precondition(phoneName == "Alex")
+        let emailName = try ContactLookup.name(for: "a@example.test", store: store)
+        precondition(emailName == "Alex")
+        precondition(store.calls == 2)
+        let invalidName = try ContactLookup.name(for: "not-a-phone", store: store)
+        precondition(invalidName == nil && store.calls == 2)
+        store.contacts = []
+        let missingName = try ContactLookup.name(for: "a@example.test", store: store)
+        precondition(missingName == nil)
+        store.contacts = [contact, contact]
+        let ambiguousName = try ContactLookup.name(for: "a@example.test", store: store)
+        precondition(ambiguousName == nil)
+        store.failure = NSError(domain: "CNErrorDomain", code: 2)
+        let failed = ContactBatch.resolve(["a@example.test"]) { handle in
+            try ContactLookup.name(for: handle, store: store)
+        }
+        precondition(failed.names.isEmpty && failed.failure == "contacts_data")
+        print("Synthetic Contacts lookup, name and partial-failure tests passed")
     }
 }
