@@ -86,7 +86,7 @@ func TestChatsListsAndEscapesTitles(t *testing.T) {
 		if reader.limit != tc.limit || !reader.closed {
 			t.Fatalf("limit = %d, closed = %v", reader.limit, reader.closed)
 		}
-		if !reader.hasDeadline || time.Until(reader.deadline) > 3*time.Second {
+		if !reader.hasDeadline || time.Until(reader.deadline) > 8*time.Second {
 			t.Fatal("missing query deadline")
 		}
 		text := out.String()

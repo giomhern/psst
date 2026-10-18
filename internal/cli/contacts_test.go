@@ -90,7 +90,7 @@ func TestContactDiagnosePrintsOnlySummary(t *testing.T) {
 			return personal.ContactDiagnostics{Chats: 10, NamedChats: 2, Identifiers: 8, Matched: 0, Lookup: "timeout"}, nil
 		},
 	})
-	want := "Contacts: authorized\nChats checked: 10\nStored chat names: 2\nDistinct participant identifiers: 8\nLookup: timeout\nMatched identifiers: 0\nMatch details unavailable; rebuild helper with make contacts.\n"
+	want := "Contacts: authorized\nChats checked: 10\nStored chat names: 2\nDistinct participant identifiers: 8\nLookup: timeout\nMatched identifiers: 0\nMatch details unavailable: lookup did not complete.\n"
 	if err != nil || out.String() != want {
 		t.Fatalf("output = %q, error = %v", out.String(), err)
 	}
@@ -107,5 +107,24 @@ func TestContactDiagnosePrintsMatchOutcomes(t *testing.T) {
 	want := "No matching contact: 3\nAmbiguous contacts: 2\nContacts without names: 1\nUnsupported identifiers: 1\nFailed identifiers: 1\n"
 	if err != nil || !strings.HasSuffix(out.String(), want) {
 		t.Fatalf("output = %q, error = %v", out.String(), err)
+	}
+}
+
+func TestContactDiagnoseOlderHelperHintOnlyAfterCompletedLookup(t *testing.T) {
+	for _, status := range []string{"completed", "timeout", "contacts_data"} {
+		var out bytes.Buffer
+		err := execute(context.Background(), []string{"personal", "contacts", "diagnose"}, &out, dependencies{
+			contactsAccess: func(context.Context, bool) (string, error) { return "authorized", nil },
+			diagnoseContacts: func(ctx context.Context) (personal.ContactDiagnostics, error) {
+				deadline, ok := ctx.Deadline()
+				if !ok || time.Until(deadline) > 8*time.Second {
+					t.Fatal("unbounded diagnostic command")
+				}
+				return personal.ContactDiagnostics{Lookup: status}, nil
+			},
+		})
+		if err != nil || strings.Contains(out.String(), "rebuild helper") != (status == "completed") {
+			t.Fatalf("status %s: output = %q, error = %v", status, out.String(), err)
+		}
 	}
 }

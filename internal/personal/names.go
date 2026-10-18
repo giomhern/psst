@@ -10,6 +10,10 @@ import (
 	"github.com/giomhern/psst/internal/personal/contacts"
 )
 
+// A native lookup can exceed 1.5 seconds even for the default ten chats.
+// Keep it bounded while allowing framework startup and a complete fallback scan.
+const contactLookupTimeout = 5 * time.Second
+
 // This consumer-owned interface allows synthetic name resolution in tests.
 type nameResolver interface {
 	Lookup(context.Context, []string) (map[string]string, error)
@@ -69,7 +73,7 @@ func lookupNames(ctx context.Context, chats []domain.Conversation, resolver name
 	status := "skipped"
 	counts := contacts.MatchCounts{}
 	if resolver != nil && len(handles) != 0 {
-		lookupCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		lookupCtx, cancel := context.WithTimeout(ctx, contactLookupTimeout)
 		var err error
 		if detailed, ok := resolver.(detailedNameResolver); ok {
 			names, counts, err = detailed.LookupDetails(lookupCtx, handles)

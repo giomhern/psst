@@ -76,7 +76,7 @@ share command output only when intended. Message bodies are not selected, and
 nothing is uploaded or logged.
 
 The command validates schema within the same read transaction as the listing,
-uses the existing read-only guards and a three-second operation deadline, and
+uses the existing read-only guards and an eight-second operation deadline, and
 closes its reader even on query/output failure. Unsupported platforms do not open
 the database. Run `psst doctor` if access or schema checks fail.
 
@@ -125,7 +125,7 @@ exits 1 for `unsupported_schema`, missing/denied access, invalid or busy databas
 other failures, or an unsupported platform. Non-macOS platforms do not probe the
 user's files. An incompatible schema lists only expected names from our allowlist.
 A passing check does not validate timestamps, rich message formats, or send permissions.
-SQLite queries have a three-second context deadline and a 250 ms busy timeout;
+Doctor queries have a three-second context deadline and a 250 ms busy timeout;
 Ctrl-C cancels the command's context. Filesystem calls follow OS cancellation behavior.
 
 The adapter uses the live database with SQLite's normal WAL handling; it never

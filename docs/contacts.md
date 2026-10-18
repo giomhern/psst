@@ -47,7 +47,7 @@ sharing presentation. One failed lookup does not discard other successful names.
 - Messages access remains read-only. Its transaction finishes before helper I/O.
 - Only unnamed displayed chats contribute identifiers: at most 500 per batch,
   at most 320 UTF-8 bytes each, in a versioned JSON request capped at 1 MiB.
-- Lookup gets a 1.5-second sub-deadline inside the three-second chat deadline.
+- Lookup gets a five-second sub-deadline inside the eight-second chat deadline.
   Optional failure uses fallback titles; parent cancellation stops the command.
   Large listings can exhaust the lookup budget.
 - Responses are capped at 2 MiB. Go accepts known statuses and requested identifiers
@@ -91,7 +91,7 @@ performs the same bounded Contacts lookup as listing. It prints only counts and
 fixed statuses, never names, identifiers, message text, or native error details.
 It does not request permission or modify Messages/Contacts.
 
-- `Lookup: timeout`: the lookup exceeded its 1.5-second budget.
+- `Lookup: timeout`: the lookup exceeded its five-second budget.
 - `Lookup: unavailable`: the helper or Contacts lookup failed. The authorization
   status above it can reveal missing helpers or permission problems.
 - `Lookup: completed` with zero matches: the helper completed but returned no
@@ -125,3 +125,11 @@ unsupported, and failed identifiers. These optional version-1 response fields ar
 validated by Go against known keys and the requested batch size. Older helpers
 remain usable but prompt for a rebuild to obtain detailed counts. This distinguishes
 successful fetches with unusable matches without revealing any contact strings.
+
+A user-authorized local investigation reproduced a lookup returning seven usable
+names for eight requested identifiers in 1.604 seconds. The former 1.5-second
+sub-deadline killed that successful batch before its JSON response arrived.
+The five-second lookup budget now leaves room for framework startup and a complete
+fallback scan within the eight-second command budget. Earlier caller deadlines
+and cancellation still take precedence; there are no automatic retries or changes
+to macOS permissions. A timeout no longer suggests rebuilding an installed helper.

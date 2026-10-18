@@ -13,6 +13,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Leave time for the read-only database query, bounded Contacts lookup and close.
+const personalCommandTimeout = 8 * time.Second
+
 func newPersonalCommand(deps dependencies) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "personal",
@@ -30,7 +33,7 @@ func newPersonalCommand(deps dependencies) *cobra.Command {
 			if err := domain.ValidateConversationLimit(limit); err != nil {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(cmd.Context(), personalCommandTimeout)
 			defer cancel()
 			return listChats(ctx, cmd.OutOrStdout(), deps.openReader, limit)
 		},

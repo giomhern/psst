@@ -23,7 +23,7 @@ type fakeNames struct {
 func (f *fakeNames) Lookup(ctx context.Context, handles []string) (map[string]string, error) {
 	f.called = true
 	f.requested = append([]string(nil), handles...)
-	if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 1500*time.Millisecond {
+	if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 5*time.Second {
 		panic("missing lookup deadline")
 	}
 	return f.names, f.err
@@ -86,5 +86,30 @@ func TestContactPartialFailurePreservesSuccessfulTitles(t *testing.T) {
 	}, resolver)
 	if err != nil || chats[0].Title != "Alex" || chats[1].Title != "b@example.test" {
 		t.Fatalf("partial titles = %v, %v", chats, err)
+	}
+}
+
+type deadlineNames struct{ deadline time.Time }
+
+func (r *deadlineNames) Lookup(ctx context.Context, _ []string) (map[string]string, error) {
+	r.deadline, _ = ctx.Deadline()
+	return map[string]string{"a@example.test": "Alex"}, nil
+}
+
+func TestContactLookupBudgetAllowsNativeStartupAndHonorsParent(t *testing.T) {
+	resolver := &deadlineNames{}
+	chats := []domain.Conversation{{Participants: []string{"a@example.test"}}}
+	started := time.Now()
+	got, err := resolveTitles(context.Background(), chats, resolver)
+	budget := resolver.deadline.Sub(started)
+	if err != nil || got[0].Title != "Alex" || budget < 4*time.Second || budget > 5*time.Second+time.Second {
+		t.Fatalf("default lookup budget = %v, error = %v", budget, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	want, _ := ctx.Deadline()
+	_, err = resolveTitles(ctx, chats, resolver)
+	if err != nil || !resolver.deadline.Equal(want) {
+		t.Fatalf("lookup did not preserve the earlier parent deadline: %v", err)
 	}
 }

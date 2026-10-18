@@ -72,7 +72,7 @@ func newContactsCommand(deps dependencies) *cobra.Command {
 		Short: "Check recent chat name lookup; print only counts and status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, cancel := context.WithTimeout(cmd.Context(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(cmd.Context(), personalCommandTimeout)
 			defer cancel()
 			status, err := deps.contactsAccess(ctx, false)
 			if err != nil {
@@ -93,8 +93,10 @@ func newContactsCommand(deps dependencies) *cobra.Command {
 			if report.Outcomes.Reported {
 				c := report.Outcomes
 				_, err = fmt.Fprintf(cmd.OutOrStdout(), "No matching contact: %d\nAmbiguous contacts: %d\nContacts without names: %d\nUnsupported identifiers: %d\nFailed identifiers: %d\n", c.Missing, c.Ambiguous, c.Nameless, c.Unsupported, c.Failed)
-			} else {
+			} else if report.Lookup == "completed" {
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Match details unavailable; rebuild helper with make contacts.")
+			} else {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Match details unavailable: lookup did not complete.")
 			}
 			return err
 		},
