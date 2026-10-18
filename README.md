@@ -16,10 +16,10 @@ Hosted Sessions are not end-to-end encrypted in the initial design.
 
 This is the **foundation scaffold**, not a working messaging client yet.
 
-Available now: CLI help, content-free platform diagnostics, a local HTTP server
-with a liveness endpoint, graceful shutdown, development PostgreSQL setup, tests,
-and CI. The server does not connect to PostgreSQL yet. Messages access, permission
-probes, authentication, room APIs, WebSockets, and the TUI are not implemented.
+Available now: CLI help, content-free platform and Messages file-access diagnostics,
+a local HTTP server with a liveness endpoint, graceful shutdown, development
+PostgreSQL setup, tests, and CI. The server does not connect to PostgreSQL yet. Message queries, SQLite
+schema probes, authentication, room APIs, WebSockets, and the TUI are not implemented.
 
 ## Quick start
 
@@ -51,6 +51,25 @@ Stop with Ctrl-C. Change the listening address with `-addr 127.0.0.1:9090`.
 The default listener is loopback HTTP for local development. A production deployment
 will require HTTPS/WSS and the authentication/lifecycle controls in the architecture.
 `/healthz` indicates process liveness only, not database readiness.
+
+## Doctor diagnostics
+
+On macOS, `psst doctor` locates `~/Library/Messages/chat.db`, checks that it is a
+regular file, opens it read-only, and closes it without reading content. It never
+prints the absolute home path or raw filesystem errors. A successful file check
+is not proof of SQLite/schema compatibility, WAL access, or send permissions.
+
+The command exits 0 when the file-access check passes, and 1 when the database is
+missing, access is denied, the file is unsuitable, another check fails, or Personal
+is unsupported on the current platform. Other platforms report unsupported without
+probing the filesystem; this does not prevent running the Sessions server.
+
+For access denial, the output suggests reviewing filesystem permissions and
+Full Disk Access for the terminal/app running Psst. It cannot determine which
+permission caused the denial and never changes permissions or opens Settings.
+See [Apple's Privacy & Security guide](https://support.apple.com/guide/mac-help/mchl211c911f/mac)
+for the scope of Full Disk Access. Tests use synthetic files and injected failures;
+no real Messages data is needed.
 
 ## Development
 
@@ -88,6 +107,7 @@ cmd/
   psst-server/             Server executable
 internal/
   cli/                     Command dispatch and foundation doctor output
+  personal/                Content-free Messages filesystem diagnostics
   server/                  HTTP startup and shutdown ownership
   sessions/httpapi/        HTTP router and endpoint tests
 migrations/                Migration conventions; schema work comes next

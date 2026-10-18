@@ -6,8 +6,8 @@
 argument parsing, wiring, and exit handling. Shared application code lives under
 `internal/`, which Go prevents unrelated external modules from importing.
 
-The foundation implements `internal/cli`, `internal/server`, and
-`internal/sessions/httpapi`. Add these planned packages with their first behavior:
+The foundation implements `internal/cli`, `internal/personal`, `internal/server`,
+and `internal/sessions/httpapi`. Add these planned packages with their first behavior:
 
 | Planned location | Responsibility |
 | --- | --- |
@@ -42,9 +42,9 @@ under a package's `testdata/` when needed.
 
 ## Next runnable slices
 
-Add macOS-safe permission and schema probes to `doctor` without printing content.
-Then introduce a read-only SQLite adapter with synthetic fixtures. Build session
-persistence before delivery acknowledgements, using real PostgreSQL integration
+The macOS filesystem probe now reports read-only file access without reading content.
+Next, introduce a read-only SQLite adapter and schema probes with synthetic fixtures.
+Build session persistence before delivery acknowledgements, using real PostgreSQL integration
 tests for transaction and locking behavior. Add dependencies and migrations only
 when the corresponding slice needs them.
 
@@ -52,3 +52,18 @@ The current health endpoint does not require a database. When persistence arrive
 add a separate readiness contract instead of turning liveness into a database probe.
 Before WebSockets arrive, update HTTP timeouts and shutdown ownership to account
 for long-lived upgraded connections.
+
+## Filesystem diagnostic concepts
+
+`personal.DatabaseCheck` is a struct carrying a typed status and safe explanation.
+`errors.Is` recognizes missing/permission errors even inside `fs.PathError`, so
+raw paths and error text do not need to reach the terminal. The probe accepts
+`fs.FS`, whose API opens files for reading; macOS supplies `os.DirFS(home)`.
+Tests use temporary directories and simulated open failures, including EPERM and
+EACCES, and fail if the probe tries to read any file content.
+
+`diagnostics_darwin.go` is selected by Go's filename platform convention.
+`diagnostics_other.go` uses `//go:build !darwin` for the unsupported-platform path.
+The CLI accepts the probe as a function dependency internally, so CLI tests never
+fall through to a user's real Messages directory. Filesystem metadata and opening
+alone do not establish SQLite compatibility or the cause of a permission denial.
