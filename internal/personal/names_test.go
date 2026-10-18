@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/giomhern/psst/internal/domain"
+	"github.com/giomhern/psst/internal/personal/contacts"
 )
 
 type fakeNames struct {
@@ -75,5 +76,15 @@ func TestResolvedTitlesRemainBoundedAndCancelable(t *testing.T) {
 	cancel()
 	if _, err := resolveTitles(ctx, []domain.Conversation{{Title: "original"}}, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation = %v", err)
+	}
+}
+
+func TestContactPartialFailurePreservesSuccessfulTitles(t *testing.T) {
+	resolver := &fakeNames{names: map[string]string{"a@example.test": "Alex"}, err: &contacts.LookupError{Reason: "invalid_predicate"}}
+	chats, err := resolveTitles(context.Background(), []domain.Conversation{
+		{Participants: []string{"a@example.test"}}, {Participants: []string{"b@example.test"}},
+	}, resolver)
+	if err != nil || chats[0].Title != "Alex" || chats[1].Title != "b@example.test" {
+		t.Fatalf("partial titles = %v, %v", chats, err)
 	}
 }

@@ -69,8 +69,13 @@ func lookupNames(ctx context.Context, chats []domain.Conversation, resolver name
 		cancel()
 		status = "completed"
 		if err != nil {
-			names = nil
 			status = "unavailable"
+			var lookupErr *contacts.LookupError
+			if errors.As(err, &lookupErr) {
+				status = lookupErr.Reason
+			} else {
+				names = nil
+			}
 			if errors.Is(err, context.DeadlineExceeded) {
 				status = "timeout"
 			}

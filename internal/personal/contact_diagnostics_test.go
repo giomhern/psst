@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/giomhern/psst/internal/domain"
+	"github.com/giomhern/psst/internal/personal/contacts"
 )
 
 func TestContactDiagnosticsDistinguishFallbackReasons(t *testing.T) {
@@ -16,6 +17,7 @@ func TestContactDiagnosticsDistinguishFallbackReasons(t *testing.T) {
 		matched  int
 	}{
 		{"matched", &fakeNames{names: map[string]string{"a@example.test": "Alex"}}, "completed", 1},
+		{"partial names", &fakeNames{names: map[string]string{"a@example.test": "Alex"}, err: &contacts.LookupError{Reason: "invalid_predicate"}}, "invalid_predicate", 1},
 		{"no matches", &fakeNames{}, "completed", 0},
 		{"timeout", &fakeNames{err: context.DeadlineExceeded}, "timeout", 0},
 		{"unavailable", &fakeNames{err: errors.New("private helper details")}, "unavailable", 0},

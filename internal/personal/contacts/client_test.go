@@ -161,3 +161,47 @@ func TestExplicitHelperConfiguration(t *testing.T) {
 		t.Fatal("explicit helper not found")
 	}
 }
+
+func TestLookupPreservesPartialNamesAndSafeFailureCategory(t *testing.T) {
+	for _, reason := range []string{"contacts_communication", "contacts_data", "contacts_access", "unauthorized_keys", "invalid_predicate", "lookup_failed"} {
+		t.Run(reason, func(t *testing.T) {
+			client := &Client{run: func(context.Context, string, []byte) ([]byte, error) {
+				return json.Marshal(response{Version: 1, Status: Authorized, Failure: reason, Names: map[string]string{"a@example.test": "Alex", "unrequested": "Ignored"}})
+			}}
+			names, err := client.Lookup(context.Background(), []string{"a@example.test", "b@example.test"})
+			var lookupErr *LookupError
+			if !errors.As(err, &lookupErr) || lookupErr.Reason != reason || !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("failure = %v", err)
+			}
+			if !reflect.DeepEqual(names, map[string]string{"a@example.test": "Alex"}) {
+				t.Fatalf("partial names = %v", names)
+			}
+		})
+	}
+	client := &Client{run: func(context.Context, string, []byte) ([]byte, error) {
+		return []byte(`{"v":1,"status":"authorized","failure":"private details","names":{"a@example.test":"Alex"}}`), nil
+	}}
+	names, err := client.Lookup(context.Background(), []string{"a@example.test"})
+	if names != nil || !errors.Is(err, ErrUnavailable) || strings.Contains(err.Error(), "private") {
+		t.Fatalf("unknown failure = %v, %v", names, err)
+	}
+}
+
+func TestHelperFailuresRemainDistinctAndPrivate(t *testing.T) {
+	for _, tc := range []struct {
+		raw    string
+		err    error
+		reason string
+	}{
+		{err: &LookupError{Reason: "helper_process"}, reason: "helper_process"},
+		{raw: "private invalid output", reason: "helper_response"},
+		{raw: `{"v":1,"status":"unavailable","failure":"request_invalid"}`, reason: "request_invalid"},
+	} {
+		client := &Client{run: func(context.Context, string, []byte) ([]byte, error) { return []byte(tc.raw), tc.err }}
+		_, err := client.Lookup(context.Background(), []string{"a@example.test"})
+		var lookupErr *LookupError
+		if !errors.As(err, &lookupErr) || lookupErr.Reason != tc.reason {
+			t.Fatalf("error = %v, want %s", err, tc.reason)
+		}
+	}
+}

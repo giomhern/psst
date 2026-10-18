@@ -22,7 +22,8 @@ terminal/app. Rebuilding/relocating the binary may require reauthorization.
 The helper uses Apple's phone/email predicates and full-name formatter, not custom
 suffix matching. It reads formatting keys for matching contacts only, and stops
 after two unified matches to detect ambiguity. Ambiguous, absent, inaccessible,
-or nameless contacts keep the identifier. These names may differ from Messages'
+or nameless contacts keep the identifier. One failed lookup does not discard
+successful names for other participants in the same batch. These names may differ from Messages'
 nicknames and name/photo-sharing presentation. No contacts are saved or modified.
 
 ## Limits and privacy
@@ -86,3 +87,11 @@ It does not request permission or modify Messages/Contacts.
 Share this summary to investigate further; there is no need to share private
 phone numbers, email addresses, or contact records. Automated checks use synthetic
 fixtures; this command runs against real local data only when explicitly invoked.
+
+Native lookup failures now report a fixed category such as `invalid_predicate`,
+`unauthorized_keys`, `contacts_access`, `contacts_communication`, or `contacts_data`.
+`helper_process` means the helper exited unsuccessfully; `helper_response` means
+its protocol response was invalid. `request_invalid` means request validation failed.
+Unknown native errors become `lookup_failed`. Categories contain no native error
+messages or record data. Successful matches survive per-identifier failures.
+Rebuild/install the helper with `make contacts` after updating native source.

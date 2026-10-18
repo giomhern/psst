@@ -46,6 +46,7 @@ type response struct {
 	Version int               `json:"v"`
 	Status  Status            `json:"status"`
 	Names   map[string]string `json:"names"`
+	Failure string            `json:"failure"`
 }
 
 // New locates an installed helper. Construction neither launches it nor requests
@@ -73,7 +74,7 @@ func commandRunner(path string) func(context.Context, string, []byte) ([]byte, e
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			return nil, ErrUnavailable
+			return nil, &LookupError{Reason: "helper_process"}
 		}
 		return output.Bytes(), nil
 	}
@@ -137,6 +138,9 @@ func (c *Client) Lookup(ctx context.Context, handles []string) (map[string]strin
 		return nil, err
 	}
 	if reply.Status != Authorized && reply.Status != Limited {
+		if reply.Status == Unavailable && reply.Failure == "request_invalid" {
+			return nil, &LookupError{Reason: "request_invalid"}
+		}
 		return nil, ErrUnavailable
 	}
 	names := make(map[string]string)
@@ -149,8 +153,22 @@ func (c *Client) Lookup(ctx context.Context, handles []string) (map[string]strin
 			names[handle] = name
 		}
 	}
-	return names, nil
+	switch reply.Failure {
+	case "":
+		return names, nil
+	case "contacts_communication", "contacts_data", "contacts_access", "unauthorized_keys", "invalid_predicate", "lookup_failed":
+		return names, &LookupError{Reason: reply.Failure}
+	default:
+		return nil, ErrUnavailable
+	}
 }
+
+// LookupError describes a known native lookup failure without personal details.
+// Lookup may return validated partial names alongside this error.
+type LookupError struct{ Reason string }
+
+func (e *LookupError) Error() string { return "contact lookup failed" }
+func (e *LookupError) Unwrap() error { return ErrUnavailable }
 
 // Access checks status, or explicitly asks macOS for permission when authorize is
 // true. Only this operation can prompt; it never fetches contact records.
@@ -178,6 +196,10 @@ func (c *Client) call(ctx context.Context, action string, input []byte) (respons
 		if ctx.Err() != nil {
 			return response{}, ctx.Err()
 		}
+		var lookupErr *LookupError
+		if errors.As(err, &lookupErr) {
+			return response{}, lookupErr
+		}
 		return response{}, ErrUnavailable
 	}
 	if len(raw) > 2<<20 {
@@ -185,7 +207,7 @@ func (c *Client) call(ctx context.Context, action string, input []byte) (respons
 	}
 	var reply response
 	if err := json.Unmarshal(raw, &reply); err != nil || reply.Version != 1 {
-		return response{}, ErrUnavailable
+		return response{}, &LookupError{Reason: "helper_response"}
 	}
 	switch reply.Status {
 	case Authorized, Limited, PermissionRequired, Denied, Restricted, Unavailable:

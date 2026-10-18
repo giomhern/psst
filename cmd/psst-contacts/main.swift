@@ -10,6 +10,7 @@ private struct Response: Encodable {
     let v = 1
     let status: String
     var names: [String: String] = [:]
+    var failure: String? = nil
 }
 
 @main
@@ -88,13 +89,12 @@ private struct ContactsHelper {
                     emit(Response(status: authorization)); return
                 }
                 let store = CNContactStore()
-                var names: [String: String] = [:]
-                for handle in Set(request.handles).sorted() {
-                    if let name = try name(for: handle, store: store) { names[handle] = name }
+                let batch = ContactBatch.resolve(request.handles) { handle in
+                    try name(for: handle, store: store)
                 }
-                emit(Response(status: authorization, names: names))
+                emit(Response(status: authorization, names: batch.names, failure: batch.failure))
             default: emit(Response(status: "unavailable"))
             }
-        } catch { emit(Response(status: "unavailable")) }
+        } catch { emit(Response(status: "unavailable", failure: "request_invalid")) }
     }
 }
