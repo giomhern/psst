@@ -16,16 +16,17 @@ Hosted Sessions are not end-to-end encrypted in the initial design.
 
 This is the **foundation scaffold**, not a working messaging client yet.
 
-Available now: CLI help, content-free platform and Messages file-access diagnostics,
+Available now: CLI help, privacy-preserving file-access and SQLite schema diagnostics,
 a local HTTP server with a liveness endpoint, graceful shutdown, development
-PostgreSQL setup, tests, and CI. The server does not connect to PostgreSQL yet. Message queries, SQLite
-schema probes, authentication, room APIs, WebSockets, and the TUI are not implemented.
+PostgreSQL setup, tests, and CI. The server does not connect to PostgreSQL yet.
+Conversation queries, authentication, room APIs, WebSockets, and the TUI are not implemented.
 
 ## Quick start
 
 Install Go **1.27.2 or newer**. Docker with Compose is optional until database work
 begins. Personal will require macOS; the Sessions server targets Linux and macOS.
-The scaffold has no third-party runtime dependencies.
+The Personal adapter uses the pinned pure-Go `modernc.org/sqlite` driver; no C
+compiler is required for ordinary builds. Dependencies download on first use.
 
 ```sh
 git clone https://github.com/giomhern/psst.git
@@ -54,15 +55,23 @@ will require HTTPS/WSS and the authentication/lifecycle controls in the architec
 
 ## Doctor diagnostics
 
-On macOS, `psst doctor` locates `~/Library/Messages/chat.db`, checks that it is a
-regular file, opens it read-only, and closes it without reading content. It never
-prints the absolute home path or raw filesystem errors. A successful file check
-is not proof of SQLite/schema compatibility, WAL access, or send permissions.
+On macOS, `psst doctor` checks `~/Library/Messages/chat.db`, opens SQLite with
+`mode=ro` and `query_only=ON`, and inspects known tables/columns in a read transaction.
+It does not query conversation rows, print private paths, or expose raw driver errors.
+The database pool stays private inside the adapter; its API exposes no write operation.
 
-The command exits 0 when the file-access check passes, and 1 when the database is
-missing, access is denied, the file is unsuitable, another check fails, or Personal
-is unsupported on the current platform. Other platforms report unsupported without
-probing the filesystem; this does not prevent running the Sessions server.
+The command exits 0 with `compatible` when the basic schema baseline passes. It
+exits 1 for `unsupported_schema`, missing/denied access, invalid or busy databases,
+other failures, or an unsupported platform. Non-macOS platforms do not probe the
+user's files. An incompatible schema lists only expected names from our allowlist.
+A passing check does not validate timestamps, rich message formats, or send permissions.
+SQLite queries have a three-second context deadline and a 250 ms busy timeout;
+Ctrl-C cancels the command's context. Filesystem calls follow OS cancellation behavior.
+
+The adapter uses the live database with SQLite's normal WAL handling; it never
+copies just `chat.db`, changes journal mode, or enables `immutable` on a live file.
+Read-only database access can still involve SQLite coordination through shared-memory
+sidecars. See [SQLite adapter safety and tests](docs/sqlite.md) for the exact limits.
 
 For access denial, the output suggests reviewing filesystem permissions and
 Full Disk Access for the terminal/app running Psst. It cannot determine which
@@ -107,7 +116,8 @@ cmd/
   psst-server/             Server executable
 internal/
   cli/                     Command dispatch and foundation doctor output
-  personal/                Content-free Messages filesystem diagnostics
+  personal/                Safe Messages diagnostics
+    sqlite/                Read-only SQLite adapter and synthetic fixtures
   server/                  HTTP startup and shutdown ownership
   sessions/httpapi/        HTTP router and endpoint tests
 migrations/                Migration conventions; schema work comes next

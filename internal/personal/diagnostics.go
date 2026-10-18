@@ -8,10 +8,14 @@ import (
 
 const databasePath = "Library/Messages/chat.db"
 
-// DatabaseStatus describes the outcome of a filesystem access check only.
+// DatabaseStatus describes filesystem access and schema inspection outcomes.
 type DatabaseStatus string
 
 const (
+	// DatabaseCompatible means the read-only probe passed the basic schema baseline.
+	DatabaseCompatible DatabaseStatus = "compatible"
+	// DatabaseIncompatible means required baseline tables or columns are absent.
+	DatabaseIncompatible DatabaseStatus = "unsupported_schema"
 	// DatabaseAccessible means a regular file could be opened read-only.
 	DatabaseAccessible DatabaseStatus = "accessible"
 	// DatabaseMissing means the expected file or a parent directory is absent.
@@ -27,7 +31,7 @@ const (
 )
 
 // DatabaseCheck is a content-free diagnostic. Detail never includes raw errors,
-// absolute paths, file contents, or evidence of SQLite schema compatibility.
+// absolute paths, or message contents. Schema results describe only our baseline.
 type DatabaseCheck struct {
 	Status DatabaseStatus
 	Detail string
