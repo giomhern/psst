@@ -43,10 +43,11 @@ type Client struct {
 }
 
 type response struct {
-	Version int               `json:"v"`
-	Status  Status            `json:"status"`
-	Names   map[string]string `json:"names"`
-	Failure string            `json:"failure"`
+	Version  int               `json:"v"`
+	Status   Status            `json:"status"`
+	Names    map[string]string `json:"names"`
+	Failure  string            `json:"failure"`
+	Outcomes map[string]int    `json:"outcomes"`
 }
 
 // New locates an installed helper. Construction neither launches it nor requests
@@ -113,6 +114,25 @@ func executable(path string) bool {
 // Lookup matches at most 500 distinct identifiers. Permission is checked by the
 // helper; lookup never prompts. Only requested identifiers can enter the result.
 func (c *Client) Lookup(ctx context.Context, handles []string) (map[string]string, error) {
+	names, _, err := c.LookupDetails(ctx, handles)
+	return names, err
+}
+
+// MatchCounts contains bounded counts, with no contact identifiers or names.
+// Reported is false when an older helper omitted this optional protocol field.
+type MatchCounts struct {
+	Reported    bool
+	Matched     int
+	Missing     int
+	Ambiguous   int
+	Nameless    int
+	Unsupported int
+	Failed      int
+}
+
+// LookupDetails performs the same lookup and returns validated aggregate counts.
+func (c *Client) LookupDetails(ctx context.Context, handles []string) (map[string]string, MatchCounts, error) {
+	counts := MatchCounts{}
 	unique := make([]string, 0, min(len(handles), 500))
 	requested := make(map[string]bool)
 	for _, handle := range handles[:min(len(handles), 500)] {
@@ -124,24 +144,51 @@ func (c *Client) Lookup(ctx context.Context, handles []string) (map[string]strin
 		unique = append(unique, handle)
 	}
 	if len(unique) == 0 {
-		return nil, nil
+		return nil, counts, nil
 	}
 	input, err := json.Marshal(struct {
 		Version int      `json:"v"`
 		Handles []string `json:"handles"`
 	}{1, unique})
 	if err != nil || len(input) > 1<<20 {
-		return nil, ErrUnavailable
+		return nil, counts, ErrUnavailable
 	}
 	reply, err := c.call(ctx, "lookup", input)
 	if err != nil {
-		return nil, err
+		return nil, counts, err
 	}
 	if reply.Status != Authorized && reply.Status != Limited {
 		if reply.Status == Unavailable && reply.Failure == "request_invalid" {
-			return nil, &LookupError{Reason: "request_invalid"}
+			return nil, counts, &LookupError{Reason: "request_invalid"}
 		}
-		return nil, ErrUnavailable
+		return nil, counts, ErrUnavailable
+	}
+	total := 0
+	counts.Reported = reply.Outcomes != nil
+	for outcome, count := range reply.Outcomes {
+		if count < 0 || count > len(unique) {
+			return nil, MatchCounts{}, ErrUnavailable
+		}
+		total += count
+		switch outcome {
+		case "matched":
+			counts.Matched = count
+		case "missing":
+			counts.Missing = count
+		case "ambiguous":
+			counts.Ambiguous = count
+		case "nameless":
+			counts.Nameless = count
+		case "unsupported":
+			counts.Unsupported = count
+		case "failed":
+			counts.Failed = count
+		default:
+			return nil, MatchCounts{}, ErrUnavailable
+		}
+	}
+	if total > len(unique) {
+		return nil, MatchCounts{}, ErrUnavailable
 	}
 	names := make(map[string]string)
 	for handle, name := range reply.Names {
@@ -155,11 +202,11 @@ func (c *Client) Lookup(ctx context.Context, handles []string) (map[string]strin
 	}
 	switch reply.Failure {
 	case "":
-		return names, nil
+		return names, counts, nil
 	case "contacts_communication", "contacts_data", "contacts_access", "unauthorized_keys", "invalid_predicate", "lookup_failed":
-		return names, &LookupError{Reason: reply.Failure}
+		return names, counts, &LookupError{Reason: reply.Failure}
 	default:
-		return nil, ErrUnavailable
+		return nil, counts, ErrUnavailable
 	}
 }
 

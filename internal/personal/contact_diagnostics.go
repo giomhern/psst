@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/giomhern/psst/internal/domain"
+	"github.com/giomhern/psst/internal/personal/contacts"
 )
 
 // ContactDiagnostics contains counts and fixed lookup states, never identifiers
@@ -15,6 +16,7 @@ type ContactDiagnostics struct {
 	Identifiers int
 	Matched     int
 	Lookup      string
+	Outcomes    contacts.MatchCounts
 }
 
 // DiagnoseContacts reads recent participant metadata and attempts the same lookup
@@ -48,8 +50,9 @@ func diagnoseContactNames(ctx context.Context, chats []domain.Conversation, reso
 			identifiers[handle] = true
 		}
 	}
-	names, status := lookupNames(ctx, chats, resolver)
+	names, status, counts := lookupNames(ctx, chats, resolver)
 	report.Identifiers, report.Lookup = len(identifiers), status
+	report.Outcomes = counts
 	for handle := range identifiers {
 		if names[handle] != "" {
 			report.Matched++

@@ -41,3 +41,21 @@ func TestContactDiagnosticsDistinguishFallbackReasons(t *testing.T) {
 		t.Fatal("named chats unexpectedly queried Contacts")
 	}
 }
+
+type detailedFakeNames struct {
+	fakeNames
+	counts contacts.MatchCounts
+}
+
+func (f *detailedFakeNames) LookupDetails(ctx context.Context, handles []string) (map[string]string, contacts.MatchCounts, error) {
+	names, err := f.Lookup(ctx, handles)
+	return names, f.counts, err
+}
+
+func TestContactDiagnosticsUseDetailedLookupOnce(t *testing.T) {
+	resolver := &detailedFakeNames{counts: contacts.MatchCounts{Reported: true, Missing: 1, Ambiguous: 1}}
+	report := diagnoseContactNames(context.Background(), []domain.Conversation{{Participants: []string{"a@example.test", "b@example.test"}}}, resolver)
+	if !resolver.called || report.Outcomes != resolver.counts || report.Lookup != "completed" {
+		t.Fatalf("detailed report = %+v", report)
+	}
+}

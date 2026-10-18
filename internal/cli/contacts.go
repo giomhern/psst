@@ -87,6 +87,15 @@ func newContactsCommand(deps dependencies) *cobra.Command {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Chats checked: %d\nStored chat names: %d\nDistinct participant identifiers: %d\nLookup: %s\nMatched identifiers: %d\n", report.Chats, report.NamedChats, report.Identifiers, report.Lookup, report.Matched)
+			if err != nil {
+				return err
+			}
+			if report.Outcomes.Reported {
+				c := report.Outcomes
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "No matching contact: %d\nAmbiguous contacts: %d\nContacts without names: %d\nUnsupported identifiers: %d\nFailed identifiers: %d\n", c.Missing, c.Ambiguous, c.Nameless, c.Unsupported, c.Failed)
+			} else {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Match details unavailable; rebuild helper with make contacts.")
+			}
 			return err
 		},
 	})

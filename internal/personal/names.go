@@ -15,6 +15,11 @@ type nameResolver interface {
 	Lookup(context.Context, []string) (map[string]string, error)
 }
 
+// detailedNameResolver is an optional capability used for aggregate diagnostics.
+type detailedNameResolver interface {
+	LookupDetails(context.Context, []string) (map[string]string, contacts.MatchCounts, error)
+}
+
 // ContactsAccess checks or explicitly requests Contacts permission without
 // opening Messages. The native helper returns only a known status string.
 func ContactsAccess(ctx context.Context, authorize bool) (string, error) {
@@ -23,7 +28,7 @@ func ContactsAccess(ctx context.Context, authorize bool) (string, error) {
 }
 
 func resolveTitles(ctx context.Context, chats []domain.Conversation, resolver nameResolver) ([]domain.Conversation, error) {
-	names, _ := lookupNames(ctx, chats, resolver)
+	names, _, _ := lookupNames(ctx, chats, resolver)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -53,7 +58,7 @@ func resolveTitles(ctx context.Context, chats []domain.Conversation, resolver na
 }
 
 // Both listing and diagnostics use the same optional lookup budget and fallbacks.
-func lookupNames(ctx context.Context, chats []domain.Conversation, resolver nameResolver) (map[string]string, string) {
+func lookupNames(ctx context.Context, chats []domain.Conversation, resolver nameResolver) (map[string]string, string, contacts.MatchCounts) {
 	var handles []string
 	for _, chat := range chats {
 		if !chat.ExplicitTitle {
@@ -62,10 +67,15 @@ func lookupNames(ctx context.Context, chats []domain.Conversation, resolver name
 	}
 	var names map[string]string
 	status := "skipped"
+	counts := contacts.MatchCounts{}
 	if resolver != nil && len(handles) != 0 {
 		lookupCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 		var err error
-		names, err = resolver.Lookup(lookupCtx, handles)
+		if detailed, ok := resolver.(detailedNameResolver); ok {
+			names, counts, err = detailed.LookupDetails(lookupCtx, handles)
+		} else {
+			names, err = resolver.Lookup(lookupCtx, handles)
+		}
 		cancel()
 		status = "completed"
 		if err != nil {
@@ -81,5 +91,5 @@ func lookupNames(ctx context.Context, chats []domain.Conversation, resolver name
 			}
 		}
 	}
-	return names, status
+	return names, status, counts
 }

@@ -205,3 +205,29 @@ func TestHelperFailuresRemainDistinctAndPrivate(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchOutcomeCountsAreBoundedAndKnown(t *testing.T) {
+	for _, tc := range []struct {
+		raw   string
+		valid bool
+	}{
+		{`{"v":1,"status":"authorized","outcomes":{"missing":1}}`, true},
+		{`{"v":1,"status":"authorized","outcomes":{"ambiguous":1}}`, true},
+		{`{"v":1,"status":"authorized","outcomes":{"nameless":1}}`, true},
+		{`{"v":1,"status":"authorized","outcomes":{"unsupported":1}}`, true},
+		{`{"v":1,"status":"authorized","outcomes":{"failed":1}}`, true},
+		{`{"v":1,"status":"authorized","outcomes":{"missing":-1}}`, false},
+		{`{"v":1,"status":"authorized","outcomes":{"missing":2}}`, false},
+		{`{"v":1,"status":"authorized","outcomes":{"missing":1,"ambiguous":1}}`, false},
+		{`{"v":1,"status":"authorized","outcomes":{"private identifier":1}}`, false},
+	} {
+		client := &Client{run: func(context.Context, string, []byte) ([]byte, error) { return []byte(tc.raw), nil }}
+		_, counts, err := client.LookupDetails(context.Background(), []string{"a@example.test"})
+		if (err == nil) != tc.valid || (tc.valid && !counts.Reported) {
+			t.Fatalf("counts = %+v, error = %v", counts, err)
+		}
+		if err != nil && strings.Contains(err.Error(), "private") {
+			t.Fatal("leaked native outcome key")
+		}
+	}
+}

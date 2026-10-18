@@ -10,25 +10,7 @@ enum ContactNames {
     }
 }
 
-// A failed identifier must not discard successful names from the same request.
-struct ContactBatch {
-    var names: [String: String] = [:]
-    var failure: String? = nil
-
-    static func resolve(_ handles: [String], lookup: (String) throws -> String?) -> ContactBatch {
-        var batch = ContactBatch()
-        for handle in Set(handles).sorted() {
-            do {
-                if let name = try lookup(handle) { batch.names[handle] = name }
-            } catch {
-                let category = failureCategory(error)
-                if batch.failure == nil { batch.failure = category }
-                else if batch.failure != category { batch.failure = "lookup_failed" }
-            }
-        }
-        return batch
-    }
-
+enum ContactFailure {
     // Never serialize NSError descriptions, userInfo, or record identifiers.
     static func failureCategory(_ error: Error) -> String {
         let error = error as NSError

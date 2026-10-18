@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/giomhern/psst/internal/personal"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/giomhern/psst/internal/personal"
+	"github.com/giomhern/psst/internal/personal/contacts"
 )
 
 func TestContactCommandsAreExplicitAndDoNotOpenMessages(t *testing.T) {
@@ -88,8 +90,22 @@ func TestContactDiagnosePrintsOnlySummary(t *testing.T) {
 			return personal.ContactDiagnostics{Chats: 10, NamedChats: 2, Identifiers: 8, Matched: 0, Lookup: "timeout"}, nil
 		},
 	})
-	want := "Contacts: authorized\nChats checked: 10\nStored chat names: 2\nDistinct participant identifiers: 8\nLookup: timeout\nMatched identifiers: 0\n"
+	want := "Contacts: authorized\nChats checked: 10\nStored chat names: 2\nDistinct participant identifiers: 8\nLookup: timeout\nMatched identifiers: 0\nMatch details unavailable; rebuild helper with make contacts.\n"
 	if err != nil || out.String() != want {
+		t.Fatalf("output = %q, error = %v", out.String(), err)
+	}
+}
+
+func TestContactDiagnosePrintsMatchOutcomes(t *testing.T) {
+	var out bytes.Buffer
+	err := execute(context.Background(), []string{"personal", "contacts", "diagnose"}, &out, dependencies{
+		contactsAccess: func(context.Context, bool) (string, error) { return "authorized", nil },
+		diagnoseContacts: func(context.Context) (personal.ContactDiagnostics, error) {
+			return personal.ContactDiagnostics{Lookup: "completed", Outcomes: contacts.MatchCounts{Reported: true, Missing: 3, Ambiguous: 2, Nameless: 1, Unsupported: 1, Failed: 1}}, nil
+		},
+	})
+	want := "No matching contact: 3\nAmbiguous contacts: 2\nContacts without names: 1\nUnsupported identifiers: 1\nFailed identifiers: 1\n"
+	if err != nil || !strings.HasSuffix(out.String(), want) {
 		t.Fatalf("output = %q, error = %v", out.String(), err)
 	}
 }

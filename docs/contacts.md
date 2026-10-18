@@ -19,16 +19,28 @@ privacy settings. Full Disk Access and Contacts access are separate permissions.
 Depending on macOS attribution, settings may identify the helper or the responsible
 terminal/app. Rebuilding/relocating the binary may require reauthorization.
 
-The helper uses Apple's phone/email predicates and full-name formatter, not custom
-suffix matching. It uses `unifiedContacts(matching:keysToFetch:)`, Apple's predicate-fetch API,
-and reads formatting keys for matching contacts only. It accepts exactly one
-unified match; absent or multiple matches keep the identifier. The framework
-returns all matches for each exact predicate, without a caller-supplied result
-limit; the helper rejects ambiguity before formatting. It does not enumerate the
-whole address book. Ambiguous, absent, inaccessible,
-or nameless contacts keep the identifier. One failed lookup does not discard
-successful names for other participants in the same batch. These names may differ from Messages'
-nicknames and name/photo-sharing presentation. No contacts are saved or modified.
+The helper first uses Apple's phone/email predicates and full-name formatter.
+It accepts exactly one unified match. When a predicate returns no match, a single
+bounded framework enumeration compares complete normalized identifiers for the
+remaining participants. This fallback reads phone/email and formatting keys for
+up to 10,000 contacts, retaining at most two candidate records per requested key.
+It stops and discards all fallback candidates if the scan is incomplete, exceeds
+100 phone/email values on any record, or fails. Existing predicate matches survive
+fallback errors. Normal command cancellation/deadlines still apply.
+
+Normalization removes phone formatting and compares complete digit sequences,
+including explicit country codes. A country-less valid ten-digit NANP number
+(or eleven digits starting with 1) gains `+1` only on devices configured for US/CA.
+Other national numbers stay national. Email addresses compare case-insensitively.
+There is no suffix matching or removal of international country codes; extensions
+and unsupported strings are not guessed. This intentionally leaves some formats
+unmatched. Distinct matching unified records remain ambiguous even with identical
+names. Only a complete successful scan can establish a unique fallback match.
+
+The framework's direct predicate API returns all matches without a caller-supplied
+result limit; ambiguity is rejected before formatting. No contacts are modified,
+uploaded or cached. Names can differ from Messages' nicknames and name/photo
+sharing presentation. One failed lookup does not discard other successful names.
 
 ## Limits and privacy
 
@@ -103,6 +115,13 @@ Rebuild/install the helper with `make contacts` after updating native source.
 The `contacts_data` category represents `CNErrorDomain` code 2, a framework
 read failure. It does not by itself establish data corruption or a permission
 problem. The helper now uses Apple's direct unified-contact predicate fetch
-instead of fetch-request enumeration for phone/email searches. Synthetic store
+for the initial phone/email search, with a bounded enumeration fallback for
+missing matches. Synthetic store
 injection verifies this path without opening the real contact store; whether it
 resolves a particular machine's framework failure requires local validation.
+
+Diagnostics now include aggregate counts for missing, ambiguous, nameless,
+unsupported, and failed identifiers. These optional version-1 response fields are
+validated by Go against known keys and the requested batch size. Older helpers
+remain usable but prompt for a rebuild to obtain detailed counts. This distinguishes
+successful fetches with unusable matches without revealing any contact strings.

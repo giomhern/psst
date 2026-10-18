@@ -11,6 +11,7 @@ private struct Response: Encodable {
     let status: String
     var names: [String: String] = [:]
     var failure: String? = nil
+    var outcomes: [String: Int] = [:]
 }
 
 @main
@@ -68,10 +69,8 @@ private struct ContactsHelper {
                     emit(Response(status: authorization)); return
                 }
                 let store = CNContactStore()
-                let batch = ContactBatch.resolve(request.handles) { handle in
-                    try ContactLookup.name(for: handle, store: store)
-                }
-                emit(Response(status: authorization, names: batch.names, failure: batch.failure))
+                let batch = ContactLookup.resolve(request.handles, store: store, region: Locale.current.region?.identifier)
+                emit(Response(status: authorization, names: batch.names, failure: batch.failure, outcomes: batch.outcomes))
             default: emit(Response(status: "unavailable"))
             }
         } catch { emit(Response(status: "unavailable", failure: "request_invalid")) }
