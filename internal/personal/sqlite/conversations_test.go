@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -32,8 +33,8 @@ func TestListConversationsOrderingFallbacksAndBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []domain.Conversation{
-		{ID: "3", Title: "🐈 日本語"}, {ID: "2", Title: "synthetic-direct"},
-		{ID: "1", Title: "Study group"}, {ID: "6", Title: "名稱"},
+		{ID: "3", Title: "🐈 日本語", ExplicitTitle: true}, {ID: "2", Title: "synthetic-direct"},
+		{ID: "1", Title: "Study group", ExplicitTitle: true}, {ID: "6", Title: "名稱", ExplicitTitle: true},
 		{ID: "5", Title: "synthetic-empty"}, {ID: "4", Title: "Untitled conversation"},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -125,5 +126,33 @@ func TestConversationListingSeesWALUpdates(t *testing.T) {
 	got, err = reader.ListConversations(context.Background(), 10)
 	if err != nil || len(got) != 2 || got[0].ID != "2" {
 		t.Fatalf("updated listing = %v, %v", got, err)
+	}
+}
+
+func TestUnnamedParticipantsAreBoundedAndNamedGroupsSkipHandles(t *testing.T) {
+	path, writer := fixture(t, "chat.db", false)
+	if _, err := writer.Exec("INSERT INTO chat(ROWID,guid,display_name) VALUES (1,'direct',NULL),(2,'group','Explicit group')"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 8; i++ {
+		if _, err := writer.Exec("INSERT INTO handle(ROWID,id) VALUES (?,?)", i, fmt.Sprintf("synthetic-%02d@example.test", i)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Exec("INSERT INTO chat_handle_join VALUES (1,?),(1,?),(2,?)", i, i, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := openFixture(t, path).ListConversations(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, chat := range got {
+		if chat.ID == "2" {
+			if !chat.ExplicitTitle || len(chat.Participants) != 0 {
+				t.Fatal("named group exposed unnecessary handles")
+			}
+		} else if len(chat.Participants) != 5 || !chat.MoreParticipants || chat.Participants[0] != "synthetic-01@example.test" {
+			t.Fatalf("unbounded or unordered handles: %+v", chat)
+		}
 	}
 }

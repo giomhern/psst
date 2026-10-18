@@ -2,7 +2,8 @@
 
 The adapter checks a minimum schema baseline and lists bounded chat summaries.
 Listing reads chat titles and message row IDs for ordering, but never selects
-message bodies or resolves contacts. It does not validate Apple's undocumented
+message bodies. Contact matching is performed separately by the optional native
+helper after the read transaction is released. SQLite does not resolve contacts. It does not validate Apple's undocumented
 formats across every macOS release. The doctor still inspects metadata only.
 
 ## Safety boundary
@@ -69,6 +70,9 @@ The `personal.Reader` application boundary resolves the local database on macOS
 and converts backend errors into safe messages. The CLI owns a small reader interface
 and is responsible for closing the opened reader. No raw driver error crosses into
 terminal error output. Schema inspection and data selection share one snapshot.
+Unnamed chats include at most five distinct participant identifiers of at most
+320 bytes each, plus an overflow marker. Named chats skip this lookup. Contact
+matching happens after commit, so no transaction is held across helper I/O.
 
 ## Verification
 

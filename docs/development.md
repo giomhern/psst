@@ -127,3 +127,27 @@ Cobra's error and usage printing are silenced so `main` reports failures once.
 See [Cobra's user guide](https://github.com/spf13/cobra/blob/main/site/content/user_guide.md)
 for command and flag APIs. We use Cobra for the client; the server's existing
 single `-addr` flag still uses the standard library. Bubble Tea is not added yet.
+
+## Contact-name resolution
+
+The domain summary carries an `ExplicitTitle` marker and bounded participant
+handles for unnamed chats. SQLite fetches at most five distinct handles (plus one
+to detect overflow) in the read transaction, without selecting message bodies.
+Explicit names skip participant enumeration. Contact matching happens after commit.
+
+`personal` owns a `nameResolver` interface containing one `Lookup` method. Tests
+supply a fake; production uses `contacts.Client`. A Go `map[string]string` maps
+requested handles to names. Optional lookup failures fall back; parent cancellation
+still stops the command.
+
+The Swift helper is a small platform boundary for Apple's Contacts framework.
+Go uses `exec.CommandContext` with a fixed executable and action, plus JSON on
+stdin/stdout. Handles never become shell source, arguments, environment values,
+logs, or persisted name-cache entries. Buffers and deadlines are bounded. A custom
+`io.Writer` caps output without embedding a buffer API that could bypass that cap
+through `io.ReaderFrom`. Raw stderr and process errors are not shown.
+
+Only `personal contacts authorize` invokes the native permission request. Normal
+lookup checks authorization and returns a status if unavailable. Native synthetic
+name tests cover ambiguity and Unicode bounds without opening the contact store.
+CI builds the helper and tests on macOS; ordinary Go checks also run on Linux.

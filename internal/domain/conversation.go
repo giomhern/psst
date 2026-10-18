@@ -11,6 +11,11 @@ const MaxConversationLimit = 100
 type Conversation struct {
 	ID    string
 	Title string
+	// ExplicitTitle preserves a stored display name ahead of contact resolution.
+	ExplicitTitle bool
+	// Participants contains up to five local handles for an unnamed chat only.
+	Participants     []string
+	MoreParticipants bool
 }
 
 // ValidateConversationLimit rejects unbounded or invalid listings.

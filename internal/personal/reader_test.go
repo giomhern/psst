@@ -37,6 +37,15 @@ func TestPersonalReaderWithSyntheticDatabase(t *testing.T) {
 	if err != nil || len(chats) != 1 || chats[0].Title != "Synthetic group" {
 		t.Fatalf("chats = %v, %v", chats, err)
 	}
+	if _, err := writer.Exec("INSERT INTO chat(ROWID,guid) VALUES (2,'synthetic-direct'); INSERT INTO handle(ROWID,id) VALUES (1,'a@example.test'); INSERT INTO chat_handle_join VALUES (2,1)"); err != nil {
+		t.Fatal(err)
+	}
+	resolver := &fakeNames{names: map[string]string{"a@example.test": "Alex"}}
+	reader.names = resolver
+	chats, err = reader.ListConversations(context.Background(), 10)
+	if err != nil || len(chats) != 2 || chats[0].ID != "2" || chats[0].Title != "Alex" || chats[1].Title != "Synthetic group" {
+		t.Fatalf("resolved listing = %v, %v", chats, err)
+	}
 	if err := reader.Close(); err != nil {
 		t.Fatal(err)
 	}

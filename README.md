@@ -62,9 +62,11 @@ go run ./cmd/psst personal chats --help
 ```
 
 On macOS, `personal chats` prints local chat IDs and quoted titles. The default is
-10 chats; `--limit` accepts 1–100. Named chats use their display name; others fall
-back to the stored Messages chat identifier. Empty databases get a clear message.
-Titles are limited to 200 Unicode characters and terminal controls are escaped.
+10 chats; `--limit` accepts 1–100. Explicit chat names take priority. Otherwise,
+Psst uses participant contact names when available and phone/email identifiers as
+fallbacks. Unnamed groups show up to five participants and an ellipsis for more.
+Empty databases get a clear message. Titles are limited to 200 Unicode characters
+and terminal controls are escaped.
 
 Ordering uses the newest **locally stored message row ID**, with chat ID as a
 stable tie-breaker; chats without messages follow. This is not sent-time ordering:
@@ -77,6 +79,39 @@ The command validates schema within the same read transaction as the listing,
 uses the existing read-only guards and a three-second operation deadline, and
 closes its reader even on query/output failure. Unsupported platforms do not open
 the database. Run `psst doctor` if access or schema checks fail.
+
+## Optional contact names
+
+Contact-name lookup uses Apple's Contacts API through a small local Swift helper.
+On macOS, build and install it once (requires Xcode Command Line Tools with Swift):
+
+```sh
+make contacts
+go run ./cmd/psst personal contacts authorize
+go run ./cmd/psst personal chats
+```
+
+`authorize` explicitly requests macOS Contacts permission. Full Disk Access for
+Messages is a separate permission. Check status without prompting with:
+
+```sh
+go run ./cmd/psst personal contacts status
+```
+
+Normal listing never requests permission. Missing permission/helper, no match,
+ambiguous matches, lookup failure, or its timeout use identifier fallbacks. Lookup
+requests names only for bounded participants of unnamed displayed chats. No contacts
+are modified, uploaded, logged, or saved in a name cache. Explicit chat names skip
+lookup. Apple's full-name formatter may differ from Messages nicknames or shared
+profile names.
+
+`make contacts` installs only the signed helper executable under
+`~/Library/Caches/psst/`, allowing `go run` to find it. It does not request access or
+copy contacts there. A built CLI also finds a helper beside its executable.
+`PSST_CONTACTS_HELPER` can specify an absolute helper path; set it to `off` to disable
+native lookups. Plain Go builds still require no Swift installation. Rebuilding or
+relocating the helper may require reauthorization depending on macOS identity
+tracking. See [Contacts integration](docs/contacts.md) for development and tests.
 
 ## Doctor diagnostics
 
@@ -139,10 +174,12 @@ To choose another port, copy `.env.example` to `.env` and change
 cmd/
   psst/                    CLI executable
   psst-server/             Server executable
+  psst-contacts/           Optional native macOS Contacts helper source
 internal/
   cli/                     Cobra commands, diagnostics, and safe table output
   domain/                  Shared conversation summaries and listing limits
-  personal/                Safe Messages diagnostics
+  personal/                Safe Messages diagnostics and title resolution
+    contacts/              Bounded local Contacts helper protocol
     sqlite/                Read-only schema/chat queries and synthetic fixtures
   server/                  HTTP startup and shutdown ownership
   sessions/httpapi/        HTTP router and endpoint tests

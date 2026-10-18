@@ -12,7 +12,10 @@ import (
 
 // Reader owns a local read-only adapter and keeps raw database errors out of
 // user-facing failures. Construct it with Open, then call Close when finished.
-type Reader struct{ store *sqlite.Reader }
+type Reader struct {
+	store *sqlite.Reader
+	names nameResolver
+}
 
 func openReader(ctx context.Context, path string) (*Reader, error) {
 	store, err := sqlite.Open(ctx, path)
@@ -31,6 +34,10 @@ func (r *Reader) ListConversations(ctx context.Context, limit int) ([]domain.Con
 		return nil, err
 	}
 	conversations, err := r.store.ListConversations(ctx, limit)
+	if err != nil {
+		return nil, conversationError(ctx, err)
+	}
+	conversations, err = resolveTitles(ctx, conversations, r.names)
 	if err != nil {
 		return nil, conversationError(ctx, err)
 	}

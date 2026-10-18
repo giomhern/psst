@@ -3,6 +3,7 @@ package personal
 import (
 	"context"
 	"errors"
+	"github.com/giomhern/psst/internal/personal/contacts"
 	"os"
 	"path/filepath"
 )
@@ -28,5 +29,10 @@ func Open(ctx context.Context) (*Reader, error) {
 	if err != nil || !filepath.IsAbs(home) {
 		return nil, errors.New("could not locate an absolute user home directory")
 	}
-	return openReader(ctx, filepath.Join(home, filepath.FromSlash(databasePath)))
+	reader, err := openReader(ctx, filepath.Join(home, filepath.FromSlash(databasePath)))
+	if err != nil {
+		return nil, err
+	}
+	reader.names = contacts.New()
+	return reader, nil
 }

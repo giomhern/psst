@@ -1,7 +1,7 @@
-.PHONY: help fmt check test race vet build lint security db-up db-down
+.PHONY: help fmt check test race vet build lint security db-up db-down contacts contacts-helper contacts-helper-test
 
 help:
-	@echo "Targets: fmt check test race vet build lint security db-up db-down"
+	@echo "Targets: fmt check test race vet build lint security db-up db-down contacts"
 
 fmt:
 	gofmt -w cmd internal
@@ -36,3 +36,18 @@ db-up:
 
 db-down:
 	docker compose down
+
+# Optional macOS bridge. Ordinary Go builds keep working without Swift.
+contacts-helper:
+	mkdir -p bin
+	xcrun swiftc -parse-as-library -O -target "$$(uname -m)-apple-macosx13.0" -framework Contacts -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker cmd/psst-contacts/Info.plist cmd/psst-contacts/main.swift cmd/psst-contacts/ContactNames.swift -o bin/psst-contacts
+	codesign --force --sign - --identifier io.github.giomhern.psst.contacts bin/psst-contacts
+
+contacts: contacts-helper
+	install -d -m 700 "$(HOME)/Library/Caches/psst"
+	install -m 700 bin/psst-contacts "$(HOME)/Library/Caches/psst/psst-contacts"
+
+contacts-helper-test:
+	mkdir -p bin
+	xcrun swiftc -parse-as-library -O cmd/psst-contacts/ContactNames.swift tests/contacts-helper/main.swift -o bin/psst-contacts-test
+	./bin/psst-contacts-test

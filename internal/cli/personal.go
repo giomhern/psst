@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newPersonalCommand(openReader func(context.Context) (conversationReader, error)) *cobra.Command {
+func newPersonalCommand(deps dependencies) *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "personal",
 		Short: "Browse locally synchronized macOS Messages",
@@ -32,11 +32,11 @@ func newPersonalCommand(openReader func(context.Context) (conversationReader, er
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), 3*time.Second)
 			defer cancel()
-			return listChats(ctx, cmd.OutOrStdout(), openReader, limit)
+			return listChats(ctx, cmd.OutOrStdout(), deps.openReader, limit)
 		},
 	}
 	chats.Flags().IntVar(&limit, "limit", 10, "Maximum chats to show (1–100)")
-	parent.AddCommand(chats)
+	parent.AddCommand(chats, newContactsCommand(deps.contactsAccess))
 	return parent
 }
 

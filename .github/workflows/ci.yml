@@ -34,6 +34,11 @@ jobs:
         run: make race
       - name: Staticcheck
         run: make lint
+      - name: Build optional Contacts helper without requesting access
+        if: runner.os == 'macOS'
+        run: |
+          make contacts-helper contacts-helper-test
+          ./bin/psst-contacts --help
       - name: Module metadata
         run: |
           go mod tidy
