@@ -18,7 +18,7 @@ type conversationReader interface {
 }
 
 type messageReader interface {
-	ListMessages(context.Context, string, int) ([]domain.Message, error)
+	ListMessagePage(context.Context, string, int, *domain.MessageCursor) (domain.MessagePage, error)
 	Close() error
 }
 

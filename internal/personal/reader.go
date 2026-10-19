@@ -47,17 +47,23 @@ func (r *Reader) ListConversations(ctx context.Context, limit int) ([]domain.Con
 // ListMessages reads a bounded recent page without invoking Contacts or logging
 // message content. Sender identifiers remain local display data.
 func (r *Reader) ListMessages(ctx context.Context, chatID string, limit int) ([]domain.Message, error) {
-	if err := domain.ValidateMessageQuery(chatID, limit); err != nil {
-		return nil, err
+	page, err := r.ListMessagePage(ctx, chatID, limit, nil)
+	return page.Messages, err
+}
+
+// ListMessagePage reads a bounded history page with an optional exclusive cursor.
+func (r *Reader) ListMessagePage(ctx context.Context, chatID string, limit int, before *domain.MessageCursor) (domain.MessagePage, error) {
+	if err := domain.ValidateMessagePage(chatID, limit, before); err != nil {
+		return domain.MessagePage{}, err
 	}
-	messages, err := r.store.ListMessages(ctx, chatID, limit)
+	page, err := r.store.ListMessagePage(ctx, chatID, limit, before)
 	if errors.Is(err, domain.ErrConversationNotFound) {
-		return nil, domain.ErrConversationNotFound
+		return domain.MessagePage{}, domain.ErrConversationNotFound
 	}
 	if err != nil {
-		return nil, conversationError(ctx, err)
+		return domain.MessagePage{}, conversationError(ctx, err)
 	}
-	return messages, nil
+	return page, nil
 }
 
 // Close releases the read-only database connection without exposing driver errors.

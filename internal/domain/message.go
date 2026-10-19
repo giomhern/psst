@@ -42,3 +42,42 @@ func ValidateMessageQuery(chatID string, limit int) error {
 	}
 	return nil
 }
+
+// ErrInvalidMessageCursor means a history boundary is malformed or belongs to
+// another chat. Its message never includes cursor contents.
+var ErrInvalidMessageCursor = errors.New("invalid history cursor; use the --before token from the same chat")
+
+// MessageCursor is a position in a local chat's history, not an authorization
+// credential. Zero SentAt denotes the unknown-time segment; MessageID breaks ties.
+type MessageCursor struct {
+	ChatID    string
+	MessageID int64
+	SentAt    time.Time
+}
+
+// MessagePage contains one bounded page. NextBefore is nil at the end of history.
+type MessagePage struct {
+	Messages   []Message
+	NextBefore *MessageCursor
+}
+
+// ValidateMessagePage checks the chat, page size and optional typed boundary.
+func ValidateMessagePage(chatID string, limit int, before *MessageCursor) error {
+	if err := ValidateMessageQuery(chatID, limit); err != nil {
+		return err
+	}
+	if before == nil {
+		return nil
+	}
+	if before.ChatID != chatID || before.MessageID < 1 {
+		return ErrInvalidMessageCursor
+	}
+	if !before.SentAt.IsZero() {
+		first := time.Date(2001, 1, 1, 0, 0, 0, 1, time.UTC)
+		last := time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
+		if before.SentAt.Before(first) || before.SentAt.After(last) {
+			return ErrInvalidMessageCursor
+		}
+	}
+	return nil
+}

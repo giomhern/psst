@@ -14,7 +14,7 @@ formats across every macOS release. The doctor still inspects metadata only.
   characters cannot inject SQLite settings. Missing databases are not created.
 - Every pool connection enables `query_only`, a 250 ms busy timeout, and
   `trusted_schema=OFF`. The pool allows one connection; it is not exported.
-- The public API provides `Open`, `InspectSchema`, `ListConversations`, `ListMessages`, and `Close`.
+- The public API provides `Open`, `InspectSchema`, `ListConversations`, `ListMessages`, `ListMessagePage`, and `Close`.
   There is no public generic query/exec handle, migration, repair, checkpoint, or
   filesystem-delete API.
 - Inspection uses SQLite metadata in a read transaction, with context cancellation
@@ -104,18 +104,44 @@ References: [driver documentation](https://pkg.go.dev/modernc.org/sqlite),
 
 ## Message history
 
-`ListMessages(ctx, chatID, limit)` accepts a positive canonical decimal local chat
-ID and a 1–100 limit. Invalid input is rejected before a transaction. The schema
+`ListMessagePage(ctx, chatID, limit, before)` accepts a positive canonical decimal
+local chat ID, a 1–100 limit, and an optional typed `domain.MessageCursor`.
+`ListMessages(ctx, chatID, limit)` remains a first-page convenience returning
+only messages. Invalid input is rejected before a transaction. The schema
 check, chat existence check and history selection share a read transaction. Missing
 and existing empty chats are distinct outcomes. An `IN` subquery selects
 linked message row IDs without duplicating messages through repeated join rows;
-orphan links and other chats do not produce rows. The page is selected before
-body fields are fetched. No source indexes or schema are changed. Result bounds
+orphan links and other chats do not produce rows. The page plus one lookahead row
+is selected before body fields are fetched. No source indexes or schema are changed.
+Result bounds
 do not guarantee that only that many rows are examined; cancellation bounds work.
 
 Selection uses descending normalized timestamp and message row ID; the selected
-page is returned in ascending order. Unknown times are lower priority than dated
-messages and appear after them when selected. There is no cursor or OFFSET yet.
+page is returned in ascending order within the dated and unknown-time segments.
+Unknown times are lower priority than dated messages and appear after them when
+selected. Positive message rowids are supported.
+
+Traversal uses the total order `(unknown ascending, timestamp descending, rowid
+descending)`. A known-time cursor admits smaller normalized timestamps, smaller
+rowids at the same timestamp, and then unknown-time rows. An unknown-time cursor
+admits only unknown-time rows with smaller rowids. This explicit NULL branch
+prevents unknown dates from getting lost through SQL's three-valued comparisons.
+There is no OFFSET. The cursor comes from the last retained row in traversal order,
+not necessarily the first displayed row when a page mixes dated and unknown rows.
+The lookahead row is excluded from output and determines whether `NextBefore` is
+present; an exactly full final page has no continuation.
+
+Cursors are typed domain values inside the adapter and encoded only by the CLI.
+The version-1 token is raw URL-safe base64 JSON, at most 256 bytes, containing chat
+ID, positive message ID, and UTC timestamp (null for unknown time). Go rejects
+invalid versions, unknown fields, invalid dates/IDs, oversized payloads, trailing
+JSON and chat mismatches before opening the database. The cursor is an untrusted
+position, not proof of identity or authorization. It contains no message text.
+A boundary row may be deleted without invalidating its key; no boundary-row lookup
+is needed. Changing the page size is supported. Separate requests have separate
+read snapshots: newer inserts do not shift an older keyset boundary, while older
+backfills, timestamp changes, deletion and resynchronization can affect traversal.
+No stable multi-request database snapshot is promised.
 
 The current explicit date policy accepts positive integer Apple-epoch seconds
 through `2200-01-01T00:00:00Z` (1–6,279,811,200), or integer Apple-epoch nanoseconds
@@ -145,3 +171,9 @@ Tests cover mixed seconds/nanoseconds, precision and policy boundaries, chronolo
 selection, tie-breaks, unknown dates, empty/missing chats, duplicate/orphan joins,
 WAL changes, unchanged database bytes, Unicode bounds, nullable/optional fields,
 validation, cancellation, safe failures, output escaping and resource cleanup.
+
+Pagination regression tests traverse mixed seconds/nanoseconds, identical timestamps,
+unknown-time segments and page sizes 1–100 without duplicates or omissions. They
+also cover exact page boundaries, duplicate/orphan joins, newer WAL inserts,
+deleted boundary rows, end-of-history detection, cross-chat/invalid cursors,
+round-trip subsecond precision, and the CLI continuation flow.

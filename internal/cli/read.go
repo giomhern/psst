@@ -16,36 +16,54 @@ import (
 
 func newReadCommand(open func(context.Context) (messageReader, error)) *cobra.Command {
 	limit := 20
+	var before string
 	cmd := &cobra.Command{
 		Use:   "read <chat>",
 		Short: "Read a recent page of local message history read-only",
-		Long:  "Read recent messages for a chat ID from personal chats. Shows bounded plain text and sender identifiers in chronological order (UTC); unknown times follow. Attachments and rich bodies are not decoded. Output contains private message content. No sending or uploading occurs.",
+		Long:  "Read recent messages for a chat ID from personal chats. Use --before with the Next --before token to continue to older pages. Shows bounded plain text and sender identifiers in chronological order (UTC); unknown times follow. Attachments and rich bodies are not decoded. Output contains private message content. No sending or uploading occurs.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := domain.ValidateMessageQuery(args[0], limit); err != nil {
 				return err
 			}
+			if cmd.Flags().Changed("before") && before == "" {
+				return domain.ErrInvalidMessageCursor
+			}
+			cursor, err := decodeMessageCursor(before, args[0])
+			if err != nil {
+				return err
+			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), personalCommandTimeout)
 			defer cancel()
-			return readMessages(ctx, cmd.OutOrStdout(), open, args[0], limit)
+			return readMessagePage(ctx, cmd.OutOrStdout(), open, args[0], limit, cursor)
 		},
 	}
 	cmd.Flags().IntVar(&limit, "limit", 20, "Maximum recent messages to show (1–100)")
+	cmd.Flags().StringVar(&before, "before", "", "Read the older page using the previous output’s cursor")
 	return cmd
 }
 
-func readMessages(ctx context.Context, out io.Writer, open func(context.Context) (messageReader, error), chatID string, limit int) (err error) {
+func readMessagePage(ctx context.Context, out io.Writer, open func(context.Context) (messageReader, error), chatID string, limit int, before *domain.MessageCursor) (err error) {
 	reader, err := open(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, reader.Close()) }()
-	messages, err := reader.ListMessages(ctx, chatID, limit)
+	page, err := reader.ListMessagePage(ctx, chatID, limit, before)
+	if err != nil {
+		return err
+	}
+	messages := page.Messages
+	token, err := encodeMessageCursor(page.NextBefore)
 	if err != nil {
 		return err
 	}
 	if len(messages) == 0 {
-		_, err = fmt.Fprintln(out, "No locally synchronized messages in this chat.")
+		empty := "No locally synchronized messages in this chat."
+		if before != nil {
+			empty = "No older locally synchronized messages."
+		}
+		_, err = fmt.Fprintln(out, empty)
 		return err
 	}
 	table := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
@@ -88,5 +106,13 @@ func readMessages(ctx context.Context, out io.Writer, open func(context.Context)
 			return err
 		}
 	}
-	return table.Flush()
+	if err := table.Flush(); err != nil {
+		return err
+	}
+	if token != "" {
+		_, err = fmt.Fprintln(out, "Next --before:", token)
+	} else {
+		_, err = fmt.Fprintln(out, "End of locally synchronized history.")
+	}
+	return err
 }

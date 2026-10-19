@@ -43,9 +43,10 @@ under a package's `testdata/` when needed.
 The macOS doctor now checks filesystem access and the SQLite schema read-only.
 Bounded conversation listing now runs through a small CLI-owned reader interface
 and Cobra commands, backed by the adapter and synthetic fixtures. A first
-`personal read <chat>` now returns one bounded recent page with tested date
-conversion and safe plain-text output. Next, add keyset pagination under the same
-normalized timestamp/message-ID ordering, specifying how unknown dates continue.
+`personal read <chat>` now supports bounded keyset pages with tested date
+conversion, safe plain-text output, and an explicit unknown-time ordering.
+`--before` continues from the token printed by the previous page. Rich-body
+support remains a separate future slice.
 Build session persistence before delivery acknowledgements, using real PostgreSQL integration
 tests for transaction and locking behavior. Add dependencies and migrations only
 when the corresponding slice needs them.
@@ -163,9 +164,24 @@ normalizes supported date representations before choosing a page, then reads onl
 bounded plain text for those selected messages. Its transaction owns all queries;
 it ends before the result leaves the adapter.
 
-A separate CLI-owned `messageReader` interface requires only `ListMessages` and
+A separate CLI-owned `messageReader` interface requires only `ListMessagePage` and
 `Close`. `*personal.Reader` satisfies it implicitly while also satisfying the
 chat-list interface. This keeps each consumer's requirements small. The facade
 sanitizes driver failures and preserves the meaningful not-found sentinel with
 `errors.Is`. The command owns closure and joins close errors into its named error
 return. Contacts and native helper calls are not part of reading history.
+
+## History pagination concepts
+
+`domain.MessageCursor` stores a typed boundary; `*MessageCursor` lets nil mean
+"start at the newest page." A non-nil cursor with zero `SentAt` instead means the
+unknown-time segment. `domain.MessagePage.NextBefore` uses nil to mean no more
+rows. SQLite requests `limit+1` and uses the extra row only to detect continuation.
+It applies an exclusive timestamp/rowid comparison instead of skipping an OFFSET.
+Returned slices reverse each dated/unknown segment for chronological display.
+
+Only the CLI imports `encoding/base64` and `encoding/json` for cursor tokens;
+SQL adapters receive typed values and parameterize their key comparisons. Tokens
+have a version and strict length/field/value validation. The first-page
+`ListMessages` convenience delegates to the same paginated implementation, so
+ordering, read-only guards, and error handling do not diverge.

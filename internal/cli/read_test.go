@@ -18,11 +18,14 @@ type stubMessages struct {
 	chatID            string
 	limit             int
 	ctx               context.Context
+	before            *domain.MessageCursor
+	next              *domain.MessageCursor
 }
 
-func (r *stubMessages) ListMessages(ctx context.Context, id string, limit int) ([]domain.Message, error) {
+func (r *stubMessages) ListMessagePage(ctx context.Context, id string, limit int, before *domain.MessageCursor) (domain.MessagePage, error) {
 	r.ctx, r.chatID, r.limit = ctx, id, limit
-	return r.rows, r.listErr
+	r.before = before
+	return domain.MessagePage{Messages: r.rows, NextBefore: r.next}, r.listErr
 }
 func (r *stubMessages) Close() error { r.closed = true; return r.closeErr }
 
@@ -77,18 +80,18 @@ func TestReadCleanupErrorsAndCancellation(t *testing.T) {
 	queryErr, closeErr := errors.New("query failed"), errors.New("close failed")
 	reader := &stubMessages{listErr: queryErr, closeErr: closeErr}
 	var out bytes.Buffer
-	err := readMessages(context.Background(), &out, func(context.Context) (messageReader, error) { return reader, nil }, "1", 20)
+	err := readMessagePage(context.Background(), &out, func(context.Context) (messageReader, error) { return reader, nil }, "1", 20, nil)
 	if !reader.closed || !errors.Is(err, queryErr) || !errors.Is(err, closeErr) || out.Len() != 0 {
 		t.Fatalf("read errors = %v", err)
 	}
 	reader = &stubMessages{}
-	err = readMessages(context.Background(), &out, func(context.Context) (messageReader, error) { return reader, nil }, "1", 20)
+	err = readMessagePage(context.Background(), &out, func(context.Context) (messageReader, error) { return reader, nil }, "1", 20, nil)
 	if err != nil || !reader.closed || !strings.Contains(out.String(), "No locally synchronized messages") {
 		t.Fatalf("empty read = %v", err)
 	}
 	reader = &stubMessages{rows: []domain.Message{{ID: "1", Text: "synthetic"}}}
 	outputErr := errors.New("output failed")
-	err = readMessages(context.Background(), failingWriter{outputErr}, func(context.Context) (messageReader, error) { return reader, nil }, "1", 20)
+	err = readMessagePage(context.Background(), failingWriter{outputErr}, func(context.Context) (messageReader, error) { return reader, nil }, "1", 20, nil)
 	if !reader.closed || !errors.Is(err, outputErr) {
 		t.Fatalf("output failure = %v", err)
 	}

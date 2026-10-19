@@ -101,6 +101,20 @@ func TestPersonalHistorySanitizesDriverErrors(t *testing.T) {
 	if err != nil || len(rows) != 1 || rows[0].Text != "synthetic-private-message" {
 		t.Fatalf("history = %v, %v", rows, err)
 	}
+	if _, err := writer.Exec("INSERT INTO message(ROWID,date) VALUES(2,788918400),(3,788918400); INSERT INTO chat_message_join VALUES(1,2),(1,3)"); err != nil {
+		t.Fatal(err)
+	}
+	page, err := reader.ListMessagePage(context.Background(), "1", 1, nil)
+	if err != nil || page.NextBefore == nil || page.Messages[0].ID != "3" {
+		t.Fatalf("facade page = %+v, %v", page, err)
+	}
+	next, err := reader.ListMessagePage(context.Background(), "1", 1, page.NextBefore)
+	if err != nil || len(next.Messages) != 1 || next.Messages[0].ID != "2" {
+		t.Fatalf("facade continuation = %+v, %v", next, err)
+	}
+	if _, err := reader.ListMessagePage(context.Background(), "1", 1, &domain.MessageCursor{ChatID: "2", MessageID: 1}); !errors.Is(err, domain.ErrInvalidMessageCursor) {
+		t.Fatalf("facade cursor validation = %v", err)
+	}
 	if _, err := reader.ListMessages(context.Background(), "99", 20); !errors.Is(err, domain.ErrConversationNotFound) {
 		t.Fatalf("not found = %v", err)
 	}
