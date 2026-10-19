@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/giomhern/psst/internal/domain"
 	"github.com/giomhern/psst/internal/personal/sqlite"
 )
 
@@ -69,5 +70,45 @@ func TestConversationErrorsDoNotExposeDriverDetails(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "private-missing.db")
 	if _, err := openReader(context.Background(), missing); err == nil || strings.Contains(err.Error(), missing) {
 		t.Fatalf("missing database error = %v", err)
+	}
+}
+
+func TestPersonalHistorySanitizesDriverErrors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "synthetic-history.db")
+	writer, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	schema, err := os.ReadFile("sqlite/testdata/baseline.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Exec(string(schema) + "INSERT INTO chat(ROWID,guid) VALUES(1,'synthetic'); INSERT INTO chat_message_join VALUES(1,1)"); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := openReader(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	resolver := &fakeNames{}
+	reader.names = resolver
+	rows, err := reader.ListMessages(context.Background(), "1", 20)
+	if resolver.called {
+		t.Fatal("history unexpectedly queried Contacts")
+	}
+	if err != nil || len(rows) != 1 || rows[0].Text != "synthetic-private-message" {
+		t.Fatalf("history = %v, %v", rows, err)
+	}
+	if _, err := reader.ListMessages(context.Background(), "99", 20); !errors.Is(err, domain.ErrConversationNotFound) {
+		t.Fatalf("not found = %v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = reader.ListMessages(context.Background(), "1", 20)
+	if err == nil || strings.Contains(err.Error(), path) || strings.Contains(err.Error(), "sql:") {
+		t.Fatalf("unsafe error = %v", err)
 	}
 }

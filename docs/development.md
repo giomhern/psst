@@ -42,8 +42,10 @@ under a package's `testdata/` when needed.
 
 The macOS doctor now checks filesystem access and the SQLite schema read-only.
 Bounded conversation listing now runs through a small CLI-owned reader interface
-and Cobra commands, backed by the adapter and synthetic fixtures. Next, implement
-`personal read <chat>` with tested timestamp conversion and keyset pagination.
+and Cobra commands, backed by the adapter and synthetic fixtures. A first
+`personal read <chat>` now returns one bounded recent page with tested date
+conversion and safe plain-text output. Next, add keyset pagination under the same
+normalized timestamp/message-ID ordering, specifying how unknown dates continue.
 Build session persistence before delivery acknowledgements, using real PostgreSQL integration
 tests for transaction and locking behavior. Add dependencies and migrations only
 when the corresponding slice needs them.
@@ -151,3 +153,19 @@ Only `personal contacts authorize` invokes the native permission request. Normal
 lookup checks authorization and returns a status if unavailable. Native synthetic
 name tests cover ambiguity and Unicode bounds without opening the contact store.
 CI builds the helper and tests on macOS; ordinary Go checks also run on Linux.
+
+## Recent message history concepts
+
+`domain.Message` uses `time.Time`; the zero value represents an unknown timestamp,
+and UTC formatting happens at the CLI boundary. `sql.NullInt64` and
+`sql.NullString` distinguish SQL NULLs while scanning rows. The SQLite adapter
+normalizes supported date representations before choosing a page, then reads only
+bounded plain text for those selected messages. Its transaction owns all queries;
+it ends before the result leaves the adapter.
+
+A separate CLI-owned `messageReader` interface requires only `ListMessages` and
+`Close`. `*personal.Reader` satisfies it implicitly while also satisfying the
+chat-list interface. This keeps each consumer's requirements small. The facade
+sanitizes driver failures and preserves the meaningful not-found sentinel with
+`errors.Is`. The command owns closure and joins close errors into its named error
+return. Contacts and native helper calls are not part of reading history.

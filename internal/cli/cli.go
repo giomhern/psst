@@ -17,8 +17,14 @@ type conversationReader interface {
 	Close() error
 }
 
+type messageReader interface {
+	ListMessages(context.Context, string, int) ([]domain.Message, error)
+	Close() error
+}
+
 type dependencies struct {
 	checkDatabase    func(context.Context) personal.DatabaseCheck
+	openMessages     func(context.Context) (messageReader, error)
 	openReader       func(context.Context) (conversationReader, error)
 	contactsAccess   func(context.Context, bool) (string, error)
 	diagnoseContacts func(context.Context) (personal.ContactDiagnostics, error)
@@ -29,6 +35,7 @@ type dependencies struct {
 func Run(ctx context.Context, args []string, out io.Writer) error {
 	return execute(ctx, args, out, dependencies{
 		checkDatabase:    personal.CheckDatabase,
+		openMessages:     func(ctx context.Context) (messageReader, error) { return personal.Open(ctx) },
 		contactsAccess:   personal.ContactsAccess,
 		diagnoseContacts: personal.DiagnoseContacts,
 		openReader:       func(ctx context.Context) (conversationReader, error) { return personal.Open(ctx) },
@@ -39,7 +46,7 @@ func execute(ctx context.Context, args []string, out io.Writer, deps dependencie
 	root := &cobra.Command{
 		Use:               "psst",
 		Short:             "Terminal-native Personal and Sessions messaging",
-		Long:              "Psst provides read-only Personal diagnostics and chat listing. Hosted Sessions, history browsing, and the interactive TUI are under development.",
+		Long:              "Psst provides read-only Personal diagnostics and chat listing. Recent plain-text history is available; hosted Sessions and the interactive TUI are under development.",
 		Args:              cobra.NoArgs,
 		SilenceErrors:     true,
 		SilenceUsage:      true,

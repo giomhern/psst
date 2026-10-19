@@ -44,6 +44,22 @@ func (r *Reader) ListConversations(ctx context.Context, limit int) ([]domain.Con
 	return conversations, nil
 }
 
+// ListMessages reads a bounded recent page without invoking Contacts or logging
+// message content. Sender identifiers remain local display data.
+func (r *Reader) ListMessages(ctx context.Context, chatID string, limit int) ([]domain.Message, error) {
+	if err := domain.ValidateMessageQuery(chatID, limit); err != nil {
+		return nil, err
+	}
+	messages, err := r.store.ListMessages(ctx, chatID, limit)
+	if errors.Is(err, domain.ErrConversationNotFound) {
+		return nil, domain.ErrConversationNotFound
+	}
+	if err != nil {
+		return nil, conversationError(ctx, err)
+	}
+	return messages, nil
+}
+
 // Close releases the read-only database connection without exposing driver errors.
 func (r *Reader) Close() error {
 	if err := r.store.Close(); err != nil {
@@ -65,5 +81,5 @@ func conversationError(ctx context.Context, err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("personal operation stopped: %w", context.DeadlineExceeded)
 	}
-	return errors.New("could not read Personal conversations; run psst doctor to check access and schema compatibility")
+	return errors.New("could not read Personal data; run psst doctor to check access and schema compatibility")
 }

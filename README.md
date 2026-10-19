@@ -4,7 +4,7 @@ Terminal-native messaging, built in Go and developed one understandable step at 
 
 Psst has two separate experiences:
 
-- **Personal:** a planned read-only view of locally synchronized macOS Messages,
+- **Personal:** a read-only view of locally synchronized macOS Messages,
   with explicit, best-effort sending through macOS automation added later.
 - **Sessions:** a planned hosted network of short-lived, invite-only chat rooms,
   independent of iMessage and backed by PostgreSQL.
@@ -14,12 +14,14 @@ Hosted Sessions are not end-to-end encrypted in the initial design.
 
 ## Current status
 
-This is the **foundation scaffold**, not a working messaging client yet.
+This is an early client with read-only Personal browsing and a Sessions server scaffold.
 
-Available now: Cobra CLI commands, read-only conversation listing, privacy-preserving
+Available now: Cobra CLI commands, read-only conversation listing and recent plain-text
+message history, optional local contact names, privacy-preserving
 file-access and SQLite schema diagnostics, a local HTTP server with a liveness endpoint, graceful shutdown, development
 PostgreSQL setup, tests, and CI. The server does not connect to PostgreSQL yet.
-Message history, authentication, room APIs, WebSockets, and the TUI are not implemented.
+Rich message decoding, history pagination, authentication, room APIs, WebSockets,
+and the TUI are not implemented.
 
 ## Quick start
 
@@ -70,8 +72,7 @@ and terminal controls are escaped.
 
 Ordering uses the newest **locally stored message row ID**, with chat ID as a
 stable tie-breaker; chats without messages follow. This is not sent-time ordering:
-late synchronization can affect the list. Timestamp conversion comes with history
-browsing. Group chats appear once, and titles can contain personal identifiers;
+late synchronization can affect the list. History uses normalized timestamps instead. Group chats appear once, and titles can contain personal identifiers;
 share command output only when intended. Message bodies are not selected, and
 nothing is uploaded or logged.
 
@@ -79,6 +80,31 @@ The command validates schema within the same read transaction as the listing,
 uses the existing read-only guards and an eight-second operation deadline, and
 closes its reader even on query/output failure. Unsupported platforms do not open
 the database. Run `psst doctor` if access or schema checks fail.
+
+## Read recent Personal messages
+
+Use an ID from `personal chats`:
+
+```sh
+go run ./cmd/psst personal read 19
+go run ./cmd/psst personal read 19 --limit 50
+go run ./cmd/psst personal read --help
+```
+
+The default page contains up to 20 recent messages; `--limit` accepts 1–100.
+Rows are selected by normalized stored date and message row ID, then printed
+oldest-first within that page. Unknown dates follow dated rows and are selected
+only if the page has room after dated messages. Times use UTC. `Me` marks outgoing
+rows; incoming senders use local phone/email identifiers, with no Contacts lookup.
+Missing chats produce a clear error; existing empty chats get an empty-history message.
+
+This command explicitly prints private message text. It neither sends nor uploads
+anything. Sender identifiers and text are quoted to escape terminal controls.
+Text is capped at 4,000 Unicode code points per row with a visible truncation label.
+Attachments, rich bodies and embedded content use placeholders; attachment files
+are not opened and rich bodies are not decoded. Some modern messages will therefore
+show a placeholder instead of their text. This is one recent page; older-page
+pagination comes next. See [history limits and date policy](docs/sqlite.md#message-history).
 
 ## Optional contact names
 
