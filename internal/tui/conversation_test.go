@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -265,5 +266,31 @@ func TestMessageTimeUsesLocalCalendarDates(t *testing.T) {
 	fall := time.Date(2026, 11, 2, 0, 15, 0, 0, location)
 	if got := formatMessageTime(time.Date(2026, 11, 1, 0, 0, 0, 0, location), fall); got != "Yesterday at 12:00 AM" {
 		t.Fatalf("25-hour day: %q", got)
+	}
+}
+
+func TestChatRefreshFinishingInConversationKeepsListSelectionValid(t *testing.T) {
+	for _, count := range []int{0, 1, 2} {
+		t.Run(fmt.Sprintf("remaining_%d", count), func(t *testing.T) {
+			m := newModel(func() tea.Msg { return chatsLoaded{chats: syntheticChats(count)} }, func(string, uint64) (tea.Cmd, context.CancelFunc) { return nil, func() {} })
+			m, _ = update(m, chatsLoaded{chats: syntheticChats(3)})
+			m, _ = update(m, key(tea.KeyEnd, ""))
+			m, refresh := update(m, key('r', "r"))
+			m, _ = update(m, key(tea.KeyEnter, ""))
+			m, _ = update(m, refresh())
+			if m.selected != max(0, count-1) {
+				t.Fatalf("selection %d invalid after refresh to %d chats", m.selected, count)
+			}
+			_ = m.View()
+			m, _ = update(m, key(tea.KeyEscape, ""))
+			_ = m.View()
+			m, _ = update(m, key(tea.KeyEnter, ""))
+			if count == 0 && m.conversation != nil {
+				t.Fatal("empty list opened a conversation")
+			}
+			if count > 0 && (m.conversation == nil || m.conversation.id != m.chats[count-1].id) {
+				t.Fatal("return opened the wrong chat")
+			}
+		})
 	}
 }

@@ -125,10 +125,13 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.selected += m.visibleRows()
 		}
 	}
+	// A list refresh can finish while a conversation is open. Keep both
+	// viewports valid before returning to either screen.
+	m = m.keepVisible()
 	if m.conversation != nil {
 		return m.clampMessages(), nil
 	}
-	return m.keepVisible(), nil
+	return m, nil
 }
 
 func (m model) visibleRows() int { return max(1, m.height-7) }
