@@ -28,7 +28,7 @@ func syntheticChats(n int) []domain.Conversation {
 func TestModelLoadsThroughCommandsAndRefreshesOnce(t *testing.T) {
 	calls := 0
 	load := func() tea.Msg { calls++; return chatsLoaded{chats: syntheticChats(30)} }
-	m := newModel(load)
+	m := newModel(load, nil)
 	if calls != 0 || !strings.Contains(m.View().Content, "Loading local chats") {
 		t.Fatal("construction performed I/O or omitted loading state")
 	}
@@ -55,7 +55,7 @@ func TestModelLoadsThroughCommandsAndRefreshesOnce(t *testing.T) {
 }
 
 func TestModelNavigationResizeAndSelectionPreservation(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, nil)
 	m, _ = update(m, chatsLoaded{chats: syntheticChats(50)})
 	m, _ = update(m, key(tea.KeyEnd, ""))
 	if m.selected != 49 || m.offset > m.selected || m.offset+m.visibleRows() <= m.selected {
@@ -97,7 +97,7 @@ func TestModelNavigationResizeAndSelectionPreservation(t *testing.T) {
 }
 
 func TestModelErrorsRetainPreviousResultsAndHideRawDetails(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, nil)
 	m, _ = update(m, chatsLoaded{err: errors.New("private path and identifiers")})
 	text := ansi.Strip(m.View().Content)
 	if strings.Contains(text, "private") || !strings.Contains(text, "psst doctor") {
@@ -116,7 +116,7 @@ func TestModelErrorsRetainPreviousResultsAndHideRawDetails(t *testing.T) {
 }
 
 func TestModelEscapesUntrustedTitlesAndBoundsLayout(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, nil)
 	m, _ = update(m, chatsLoaded{chats: []domain.Conversation{{ID: "1\n\x1b]52;malicious\a", Title: "猫\n\t\x1b[31m\u202e" + strings.Repeat("界", 250)}}})
 	for _, size := range []tea.WindowSizeMsg{{Width: 36, Height: 8}, {Width: 80, Height: 24}, {Width: 1, Height: 1}, {Width: 1000000, Height: 1000000}} {
 		m, _ = update(m, size)

@@ -17,11 +17,11 @@ Hosted Sessions are not end-to-end encrypted in the initial design.
 This is an early client with read-only Personal browsing and a Sessions server scaffold.
 
 Available now: Cobra CLI commands, read-only conversation listing and recent plain-text
-message history, a Bubble Tea chat-list interface, optional local contact names, privacy-preserving
+message history, a Bubble Tea chat and conversation interface, optional local contact names, privacy-preserving
 file-access and SQLite schema diagnostics, a local HTTP server with a liveness endpoint, graceful shutdown, development
 PostgreSQL setup, tests, and CI. The server does not connect to PostgreSQL yet.
 Rich message decoding, authentication, room APIs, WebSockets,
-and conversation viewing inside the TUI are not implemented.
+and older-page loading inside the TUI are not implemented.
 
 ## Quick start
 
@@ -55,36 +55,41 @@ The default listener is loopback HTTP for local development. A production deploy
 will require HTTPS/WSS and the authentication/lifecycle controls in the architecture.
 `/healthz` indicates process liveness only, not database readiness.
 
-## Interactive Personal chat list
+## Interactive Personal browsing
 
 ```sh
 go run ./cmd/psst personal ui
 go run ./cmd/psst personal ui --limit 100
 ```
 
-This first Bubble Tea screen lists recent chats, with optional contact names,
+The Bubble Tea interface lists recent chats, with optional contact names,
 in an alternate terminal screen. It loads at most 50 chats by default; `--limit`
 accepts 1–100. Use an interactive terminal for both input and output.
 
 | Key | Action |
 | --- | --- |
-| Up / Down or `k` / `j` | Move selection |
-| Home / End or `g` / `G` | First / last loaded chat |
+| Up / Down or `k` / `j` | Move selection / scroll messages |
+| Home / End or `g` / `G` | First / last loaded chat or message line |
 | Page Up / Page Down | Move one visible page |
-| `r` | Refresh the list |
-| `q`, Esc, Ctrl-C | Quit |
+| Enter | Open selected conversation at the latest messages |
+| `r` | Refresh the current screen |
+| Esc | Return to chats; quit from the chat list |
+| `q`, Ctrl-C | Quit |
 
 The selection follows its chat ID across refreshes. Reads run outside the UI
 update loop, have an eight-second deadline, and close their reader after each
 load. Refresh is manual; repeated refresh keys do not queue extra reads. On a
 refresh failure, previous results remain visible. Quit cancels and joins active
 reads before the UI entry point returns, and Bubble Tea restores the terminal.
-Titles are escaped before styling and clipped to the available display width.
-There is no UI transcript cache, message sending or network upload.
+Titles and message content are escaped before styling; message text wraps to the
+available display width. Returning to the list discards the loaded message page.
+The UI writes no transcript to disk and performs no message sending or network upload.
 
-This checkpoint is the chat list only: Enter does not open a conversation yet.
-Use `personal read <chat ID>` for history until the next UI checkpoint adds the
-conversation view and later connects scrolling to pagination. Plain CLI commands
+Conversations show up to 20 recent messages in chronological order (UTC), with
+sender identifiers and placeholders for attachments or unsupported rich content.
+Unknown times follow known times. Scroll within this page using the keys above;
+older-page loading is a later increment. Use `personal read <chat ID>` and its
+`--before` cursor for older history today. Plain CLI commands
 continue to work without an interactive terminal. The UI itself does not request
 Contacts access; use the explicit authorization command below when needed.
 

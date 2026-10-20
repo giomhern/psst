@@ -2,6 +2,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -17,18 +18,33 @@ type chatsLoaded struct {
 	err   error
 }
 
+type messagesLoaded struct {
+	request uint64
+	page    domain.MessagePage
+	err     error
+}
+
+type openConversation func(string, uint64) (tea.Cmd, context.CancelFunc)
+
 type chatItem struct{ id, title string }
 
 type model struct {
-	load                      tea.Cmd
-	chats                     []chatItem
-	selected, offset          int
-	width, height             int
-	loading, failed, quitting bool
+	load                                 tea.Cmd
+	open                                 openConversation
+	cancel                               context.CancelFunc
+	conversation                         *chatItem
+	request                              uint64
+	messages                             []domain.Message
+	messageOffset                        int
+	historyLoading, historyFailed, older bool
+	chats                                []chatItem
+	selected, offset                     int
+	width, height                        int
+	loading, failed, quitting            bool
 }
 
-func newModel(load tea.Cmd) model {
-	return model{load: load, width: 80, height: 24, loading: true}
+func newModel(load tea.Cmd, open openConversation) model {
+	return model{load: load, open: open, width: 80, height: 24, loading: true}
 }
 
 func (m model) Init() tea.Cmd { return m.load }
@@ -41,6 +57,20 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = max(1, min(msg.Width, 240))
 		m.height = max(1, min(msg.Height, 120))
+	case messagesLoaded:
+		if m.conversation == nil || msg.request != m.request {
+			return m, nil
+		}
+		m.historyLoading, m.historyFailed = false, msg.err != nil
+		if m.cancel != nil {
+			m.cancel()
+			m.cancel = nil
+		}
+		if msg.err == nil {
+			m.messages = msg.page.Messages[:min(len(msg.page.Messages), 20)]
+			m.older = msg.page.NextBefore != nil
+			m.messageOffset = max(0, len(m.messageLines())-m.visibleRows())
+		}
 	case chatsLoaded:
 		m.loading = false
 		m.failed = msg.err != nil
@@ -61,6 +91,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.KeyPressMsg:
+		if m.conversation != nil {
+			return m.updateConversation(msg)
+		}
+		if msg.String() == "enter" && len(m.chats) > 0 && m.open != nil {
+			chat := m.chats[m.selected]
+			m.conversation = &chat
+			return m.startHistory()
+		}
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			m.quitting = true
@@ -84,6 +122,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "pgdown":
 			m.selected += m.visibleRows()
 		}
+	}
+	if m.conversation != nil {
+		return m.clampMessages(), nil
 	}
 	return m.keepVisible(), nil
 }
@@ -115,9 +156,13 @@ func (m model) View() tea.View {
 	if m.quitting {
 		return view
 	}
-	width := max(1, min(m.width-4, 88))
+	width := m.contentWidth()
 	if m.width < 36 || m.height < 8 {
 		view.SetContent(ansi.Truncate("Resize terminal to 36×8 · q quit", m.width, ""))
+		return view
+	}
+	if m.conversation != nil {
+		view.SetContent(m.conversationView())
 		return view
 	}
 	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("#8BE9D0"))
@@ -172,7 +217,7 @@ func (m model) View() tea.View {
 			status = "Refresh failed · showing previous results · r retries"
 		}
 	}
-	lines = append(lines, muted.Render(ansi.Truncate(status, width, "…")), muted.Render("↑↓/jk move · r refresh · q quit"))
+	lines = append(lines, muted.Render(ansi.Truncate(status, width, "…")), muted.Render("↑↓/jk move · Enter open · r refresh · q quit"))
 	for i, line := range lines {
 		lines[i] = "  " + ansi.Truncate(line, width, "…")
 	}

@@ -132,7 +132,8 @@ Cobra's error and usage printing are silenced so `main` reports failures once.
 
 See [Cobra's user guide](https://github.com/spf13/cobra/blob/main/site/content/user_guide.md)
 for command and flag APIs. We use Cobra for the client; the server's existing
-single `-addr` flag still uses the standard library. Bubble Tea v2 now provides the first Personal chat-list screen.
+single `-addr` flag still uses the standard library. Bubble Tea v2 provides
+Personal chat-list and conversation screens.
 
 ## Contact-name resolution
 
@@ -189,10 +190,11 @@ have a version and strict length/field/value validation. The first-page
 `ListMessages` convenience delegates to the same paginated implementation, so
 ordering, read-only guards, and error handling do not diverge.
 
-## Bubble Tea chat-list concepts
+## Bubble Tea interface concepts
 
-`internal/tui` depends on domain conversation values and an injected `LoadChats`
-function, not SQLite or macOS code. Cobra validates `personal ui --limit` and
+`internal/tui` depends on domain values and an injected `Source` containing
+`LoadChats` and `LoadMessages` functions, not SQLite or macOS code. Cobra
+validates `personal ui --limit` and
 supplies a loader that opens, lists and closes a Personal reader for each request.
 Production startup requires TTY input/output before starting any Personal access.
 
@@ -201,9 +203,17 @@ Init returns a `tea.Cmd` function; the framework executes that work separately a
 sends its `chatsLoaded` result back as a message. Update alone changes selection,
 loading/error flags, loaded labels and viewport offsets. View renders a `tea.View`
 with `AltScreen` enabled; it performs no I/O. Value receivers return the updated
-model explicitly. Model state retains only IDs and titles needed by the screen.
+model explicitly. The list retains IDs and titles. Enter opens a conversation
+and a command loads
+its latest 20 messages; Esc cancels the read, discards the page, and returns to
+the preserved list selection.
 
-The model allows only one load at a time, including manual refresh. The runner
+Each screen allows only one load at a time, including manual refresh. A monotonic
+request ID travels with every history result: Update ignores results from a
+conversation that has since been left or replaced. Cancellation alone cannot
+prevent an already completed result from arriving late. The shared admission gate
+bounds active reads to two, allowing a new screen to load while a canceled read
+closes. Further requests fail for manual retry rather than queueing. The runner
 captures an operation context in the command closure instead of storing request
 contexts in model structs. Each read gets eight seconds; the existing optional
 Contacts lookup retains its five-second child budget. On exit the runner cancels
@@ -213,18 +223,21 @@ while shutdown waits. The CLI loader closes its reader before returning, so this
 join includes connection cleanup. Callback implementations must honor context.
 
 Lip Gloss supplies presentation styles; `x/ansi` supplies display-cell-aware
-truncation and `x/term` checks terminal capabilities. Source labels are escaped
-before applying trusted styles. The viewport and rendered dimensions are bounded;
+truncation and `x/term` checks terminal capabilities. Source labels and message
+bodies are escaped
+before applying trusted styles. Conversation bodies wrap using `x/ansi`, with
+scrolling over the loaded page and initial position at its bottom. The viewport
+and rendered dimensions are bounded;
 small terminals show a resize prompt. No pointer to the model is shared with I/O
 workers. There is no automatic polling, reader held for the whole UI session,
-message sending, or Sessions connection in this checkpoint.
+message sending, older-page loading, or Sessions connection in this checkpoint.
 
 Tests use synthetic chats for state transitions, navigation, viewport bounds,
 refresh/selection retention, safe errors and escaping. A headless program test
 runs the actual event loop. Loader cancellation tests exercise blocked cleanup
 and admission after shutdown; Cobra tests verify help/invalid arguments do not
 launch the UI or open Personal files. Manual pseudo-terminal validation also uses
-only synthetic chats, including Unicode titles.
+only synthetic data, including Unicode titles and message bodies.
 
 References: [Bubble Tea v2](https://github.com/charmbracelet/bubbletea),
 [v2 declarative views](https://github.com/charmbracelet/bubbletea/blob/main/UPGRADE_GUIDE_V2.md).

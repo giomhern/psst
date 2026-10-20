@@ -21,14 +21,15 @@ func TestLoaderCancelsAndWaitsForActiveRead(t *testing.T) {
 	release := make(chan struct{})
 	result := make(chan tea.Msg, 1)
 	var calls atomic.Int32
-	command, wait := newChatLoader(ctx, func(ctx context.Context) ([]domain.Conversation, error) {
+	gate, wait := newReadGate()
+	command := chatCommand(ctx, func(ctx context.Context) ([]domain.Conversation, error) {
 		calls.Add(1)
 		close(started)
 		<-ctx.Done()
 		close(canceled)
 		<-release // Emulate resource cleanup before the query returns.
 		return nil, ctx.Err()
-	})
+	}, gate)
 	go func() { result <- command() }()
 	<-started
 	cancel()
@@ -57,13 +58,14 @@ func TestLoaderCancelsAndWaitsForActiveRead(t *testing.T) {
 }
 
 func TestLoaderSetsDeadline(t *testing.T) {
-	command, wait := newChatLoader(context.Background(), func(ctx context.Context) ([]domain.Conversation, error) {
+	gate, wait := newReadGate()
+	command := chatCommand(context.Background(), func(ctx context.Context) ([]domain.Conversation, error) {
 		deadline, ok := ctx.Deadline()
 		if !ok || time.Until(deadline) > 8*time.Second {
 			return nil, errors.New("missing bounded deadline")
 		}
 		return syntheticChats(1), nil
-	})
+	}, gate)
 	defer wait()
 	message := command().(chatsLoaded)
 	if message.err != nil || len(message.chats) != 1 {
@@ -76,10 +78,10 @@ func TestHeadlessProgramLoadsAndExits(t *testing.T) {
 	defer cancel()
 	var out bytes.Buffer
 	called := false
-	err := runProgram(ctx, nil, &out, func(context.Context) ([]domain.Conversation, error) {
+	err := runProgram(ctx, nil, &out, Source{Chats: func(context.Context) ([]domain.Conversation, error) {
 		called = true
 		return syntheticChats(2), nil
-	}, tea.WithoutRenderer(), tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
+	}}, tea.WithoutRenderer(), tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
 		if _, ok := msg.(chatsLoaded); ok {
 			return tea.QuitMsg{}
 		}
@@ -92,11 +94,97 @@ func TestHeadlessProgramLoadsAndExits(t *testing.T) {
 
 func TestRunRejectsRedirectedOutputBeforeLoading(t *testing.T) {
 	var out bytes.Buffer
-	err := Run(context.Background(), os.Stdin, &out, func(context.Context) ([]domain.Conversation, error) {
+	err := Run(context.Background(), os.Stdin, &out, Source{Chats: func(context.Context) ([]domain.Conversation, error) {
 		t.Fatal("non-interactive UI loaded Personal data")
 		return nil, nil
-	})
+	}})
 	if err == nil {
 		t.Fatal("redirected UI output accepted")
+	}
+}
+
+func TestHistoryCommandCancellationAndDeadline(t *testing.T) {
+	gate, wait := newReadGate()
+	defer wait()
+	calls := 0
+	command, cancel := messageCommand(context.Background(), func(ctx context.Context, id string) (domain.MessagePage, error) {
+		calls++
+		if id != "7" {
+			t.Fatal("wrong conversation")
+		}
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > 8*time.Second {
+			t.Fatal("history has no bounded deadline")
+		}
+		return domain.MessagePage{Messages: []domain.Message{{Text: "Synthetic"}}}, nil
+	}, gate, "7", 9)
+	cancel()
+	message := command().(messagesLoaded)
+	if calls != 0 || message.request != 9 || !errors.Is(message.err, context.Canceled) {
+		t.Fatal("canceled command started I/O or lost request ID")
+	}
+	command, cancel = messageCommand(context.Background(), func(ctx context.Context, id string) (domain.MessagePage, error) {
+		calls++
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > 8*time.Second || id != "7" {
+			t.Fatal("incorrect history context or ID")
+		}
+		return domain.MessagePage{}, nil
+	}, gate, "7", 10)
+	defer cancel()
+	message = command().(messagesLoaded)
+	if calls != 1 || message.request != 10 || message.err != nil {
+		t.Fatal("history command did not complete")
+	}
+}
+
+func TestHistoryShutdownJoinsCleanupAndBoundsReads(t *testing.T) {
+	gate, wait := newReadGate()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan struct{}, 2)
+	cleaning := make(chan struct{}, 2)
+	release := make(chan struct{})
+	load := func(ctx context.Context, _ string) (domain.MessagePage, error) {
+		started <- struct{}{}
+		<-ctx.Done()
+		cleaning <- struct{}{}
+		<-release
+		return domain.MessagePage{}, ctx.Err()
+	}
+	commands := make([]tea.Cmd, 2)
+	for i := range commands {
+		command, stop := messageCommand(ctx, load, gate, "1", uint64(i+1))
+		defer stop()
+		commands[i] = command
+		go command()
+		<-started
+	}
+	late, stop := messageCommand(ctx, func(context.Context, string) (domain.MessagePage, error) {
+		t.Error("excess read started")
+		return domain.MessagePage{}, nil
+	}, gate, "2", 3)
+	defer stop()
+	if result := late().(messagesLoaded); result.err == nil {
+		t.Fatal("excess read was not rejected")
+	}
+	cancel()
+	<-cleaning
+	<-cleaning
+	finished := make(chan struct{})
+	go func() { wait(); close(finished) }()
+	select {
+	case <-finished:
+		t.Error("shutdown skipped history cleanup")
+	default:
+	}
+	close(release)
+	select {
+	case <-finished:
+	case <-time.After(3 * time.Second):
+		t.Fatal("history cleanup was not joined")
+	}
+	if result := late().(messagesLoaded); result.err == nil {
+		t.Fatal("read admitted after shutdown")
 	}
 }
