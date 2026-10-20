@@ -145,3 +145,15 @@ func TestModelEscapesUntrustedTitlesAndBoundsLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestChatListUsesAvailableTerminalWidth(t *testing.T) {
+	m := newModel(nil, nil)
+	m, _ = update(m, chatsLoaded{chats: syntheticChats(2)})
+	for _, width := range []int{160, 320, 512} {
+		m, _ = update(m, tea.WindowSizeMsg{Width: width, Height: 24})
+		lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+		if ansi.StringWidth(lines[2]) != width-2 || ansi.StringWidth(lines[3]) != width-2 {
+			t.Fatalf("chat list did not fill terminal width %d", width)
+		}
+	}
+}

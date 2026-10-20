@@ -22,7 +22,7 @@ func (m model) contentWidth() int {
 	if m.hasSidebar() {
 		width -= sidebarWidth + 3
 	}
-	return max(1, min(width, 88))
+	return max(1, width)
 }
 
 func (m model) startHistory(before *domain.MessageCursor) (tea.Model, tea.Cmd) {

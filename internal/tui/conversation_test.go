@@ -294,3 +294,57 @@ func TestChatRefreshFinishingInConversationKeepsListSelectionValid(t *testing.T)
 		})
 	}
 }
+
+func TestConversationUsesAvailableTerminalWidth(t *testing.T) {
+	m := newModel(nil, nil)
+	m.chats = []chatItem{{id: "1", title: "Synthetic"}}
+	m.conversation = &m.chats[0]
+	m.messages = []domain.Message{{ID: "1", FromMe: true, Text: "Right edge"}}
+	for _, width := range []int{80, 96, 160, 240, 320, 512} {
+		m, _ = update(m, tea.WindowSizeMsg{Width: width, Height: 24})
+		expected := width - 4
+		if width >= 96 {
+			expected -= sidebarWidth + 3
+		}
+		if m.contentWidth() != expected {
+			t.Fatalf("width %d: pane = %d; want %d", width, m.contentWidth(), expected)
+		}
+		lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+		if ansi.StringWidth(lines[2]) != width-2 {
+			t.Fatalf("divider does not reach the right margin at width %d", width)
+		}
+		found := false
+		for _, line := range lines {
+			if strings.Contains(line, "Right edge") {
+				found = true
+				if ansi.StringWidth(line) != width-2 {
+					t.Fatalf("outgoing bubble did not reach right margin at width %d", width)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("missing outgoing bubble")
+		}
+	}
+	m, _ = update(m, tea.WindowSizeMsg{Width: 1000000, Height: 24})
+	if m.width != maxTerminalColumns {
+		t.Fatal("implausible terminal width was not bounded")
+	}
+}
+
+func TestResizeKeepsVisibleMessageAnchor(t *testing.T) {
+	m := newModel(nil, nil)
+	m.conversation = &chatItem{id: "1"}
+	m.messages = historyMessages(1, 20)
+	for i := range m.messages {
+		m.messages[i].Text = strings.Repeat("Wrapped text 世界 ", 20)
+	}
+	m = m.restoreHistoryAnchor("10", 2)
+	for _, width := range []int{36, 80, 96, 320, 120} {
+		m, _ = update(m, tea.WindowSizeMsg{Width: width, Height: 12})
+		id, line := m.historyAnchor()
+		if id != "10" || line != 2 {
+			t.Fatalf("resize to %d moved anchor to %q line %d", width, id, line)
+		}
+	}
+}

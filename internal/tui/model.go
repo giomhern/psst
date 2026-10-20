@@ -14,6 +14,9 @@ import (
 	"github.com/giomhern/psst/internal/domain"
 )
 
+// Bound rendering allocations for implausible terminal-size reports.
+const maxTerminalColumns = 4096
+
 type chatsLoaded struct {
 	chats []domain.Conversation
 	err   error
@@ -59,8 +62,16 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch msg := message.(type) {
 	case tea.WindowSizeMsg:
-		m.width = max(1, min(msg.Width, 240))
+		var anchor string
+		var line int
+		if m.conversation != nil {
+			anchor, line = m.historyAnchor()
+		}
+		m.width = max(1, min(msg.Width, maxTerminalColumns))
 		m.height = max(1, min(msg.Height, 120))
+		if m.conversation != nil {
+			m = m.restoreHistoryAnchor(anchor, line)
+		}
 	case messagesLoaded:
 		if m.conversation == nil || msg.request != m.request {
 			return m, nil

@@ -290,3 +290,10 @@ The buffer retains at most 200 messages; each command requests the smaller of
 automatically fetch when scrolling. End-of-history follows the returned nil
 cursor, including an empty older page after local deletions. Pages are separate
 read snapshots, so already loaded messages are not a live view of later edits.
+
+Pane width follows terminal resize events, subtracting only the outer margins
+and the sidebar/divider when present. The former 88-column pane cap is removed.
+Message bodies still wrap at at most 56 text cells; outgoing bubbles align to the
+right edge of the expanded pane. Resize captures and restores the history anchor
+before clamping the viewport. Reported width is bounded at 4,096 columns to
+protect rendering allocations from implausible size reports.

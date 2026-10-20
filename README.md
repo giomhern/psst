@@ -69,7 +69,10 @@ The conversation view uses blue outlined outgoing bubbles on the right and gray
 outlined incoming bubbles on the left, with no background fill. Local contact
 names appear above incoming messages, and the header keeps the resolved chat title. At 96 columns or wider, a chat sidebar remains
 visible; use Esc to return to chat selection. Narrower terminals show the
-conversation alone. Color follows the terminal capabilities and `NO_COLOR`.
+conversation alone. The chat list and conversation pane fill the available
+terminal width with two-column outer margins; individual bubbles keep readable
+line lengths. Resizing preserves the visible message and its line where possible.
+Color follows the terminal capabilities and `NO_COLOR`.
 
 | Key | Action |
 | --- | --- |
