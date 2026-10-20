@@ -1,4 +1,4 @@
-// Package tui provides the read-only Personal terminal interface.
+// Package tui provides the Personal terminal interface.
 package tui
 
 import (
@@ -33,21 +33,25 @@ type openConversation func(string, uint64, int, *domain.MessageCursor) (tea.Cmd,
 type chatItem struct{ id, title string }
 
 type model struct {
-	load                          tea.Cmd
-	now                           func() time.Time
-	open                          openConversation
-	cancel                        context.CancelFunc
-	conversation                  *chatItem
-	request                       uint64
-	messages                      []domain.Message
-	messageOffset                 int
-	historyLoading, historyFailed bool
-	historyLoaded, loadingOlder   bool
-	nextBefore                    *domain.MessageCursor
-	chats                         []chatItem
-	selected, offset              int
-	width, height                 int
-	loading, failed, quitting     bool
+	load                                        tea.Cmd
+	send                                        func(string, string, uint64) tea.Cmd
+	composing, confirming, sending              bool
+	draft, pendingDraft, draftError, sendNotice string
+	composeOffset                               int
+	now                                         func() time.Time
+	open                                        openConversation
+	cancel                                      context.CancelFunc
+	conversation                                *chatItem
+	request                                     uint64
+	messages                                    []domain.Message
+	messageOffset                               int
+	historyLoading, historyFailed               bool
+	historyLoaded, loadingOlder                 bool
+	nextBefore                                  *domain.MessageCursor
+	chats                                       []chatItem
+	selected, offset                            int
+	width, height                               int
+	loading, failed, quitting                   bool
 }
 
 func newModel(load tea.Cmd, open openConversation) model {
@@ -72,6 +76,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.conversation != nil {
 			m = m.restoreHistoryAnchor(anchor, line)
 		}
+	case tea.PasteMsg:
+		if m.composing && !m.confirming {
+			m = m.appendDraft(msg.Content)
+		}
+	case sendCompleted:
+		return m.finishSend(msg)
 	case messagesLoaded:
 		if m.conversation == nil || msg.request != m.request {
 			return m, nil
@@ -186,7 +196,7 @@ func (m model) View() tea.View {
 	selected := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#0A84FF")).Bold(true).Width(width)
 	lines := []string{
 		accent.Bold(true).Render("Messages") + muted.Render("  /  Personal"),
-		muted.Render(fmt.Sprintf("Recent chats · %d loaded · read-only", len(m.chats))),
+		muted.Render(m.chatListSubtitle()),
 		muted.Render(strings.Repeat("─", width)),
 	}
 	var rows []string
@@ -239,4 +249,12 @@ func (m model) View() tea.View {
 	}
 	view.SetContent(strings.Join(lines, "\n"))
 	return view
+}
+
+func (m model) chatListSubtitle() string {
+	mode := "read-only"
+	if m.send != nil {
+		mode = "local"
+	}
+	return fmt.Sprintf("Recent chats · %d loaded · %s", len(m.chats), mode)
 }

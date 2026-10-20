@@ -26,6 +26,7 @@ type messageReader interface {
 
 type dependencies struct {
 	launchUI         func(context.Context, io.Writer, tui.Source) error
+	sendMessage      func(context.Context, string, string) (domain.SendResult, error)
 	checkDatabase    func(context.Context) personal.DatabaseCheck
 	openMessages     func(context.Context) (messageReader, error)
 	openReader       func(context.Context) (conversationReader, error)
@@ -38,6 +39,7 @@ type dependencies struct {
 func Run(ctx context.Context, args []string, out io.Writer) error {
 	return execute(ctx, args, out, dependencies{
 		checkDatabase: personal.CheckDatabase,
+		sendMessage:   personal.Send,
 		launchUI: func(ctx context.Context, out io.Writer, source tui.Source) error {
 			return tui.Run(ctx, os.Stdin, out, source)
 		},

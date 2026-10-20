@@ -5,7 +5,7 @@ Terminal-native messaging, built in Go and developed one understandable step at 
 Psst has two separate experiences:
 
 - **Personal:** a read-only view of locally synchronized macOS Messages,
-  with explicit, best-effort sending through macOS automation added later.
+  with explicit, confirmed text sends through macOS automation.
 - **Sessions:** a planned hosted network of short-lived, invite-only chat rooms,
   independent of iMessage and backed by PostgreSQL.
 
@@ -14,10 +14,11 @@ Hosted Sessions are not end-to-end encrypted in the initial design.
 
 ## Current status
 
-This is an early client with read-only Personal browsing and a Sessions server scaffold.
+This is an early client with Personal browsing, confirmed text sending, and a Sessions server scaffold.
 
 Available now: Cobra CLI commands, read-only conversation listing and recent plain-text
-message history, a Bubble Tea chat and conversation interface, optional local contact names, privacy-preserving
+message history, a Bubble Tea chat and conversation interface with confirmed sending,
+optional local contact names, privacy-preserving
 file-access and SQLite schema diagnostics, a local HTTP server with a liveness endpoint, graceful shutdown, development
 PostgreSQL setup, tests, and CI. The server does not connect to PostgreSQL yet.
 Rich formatting, authentication, room APIs, and WebSockets are not implemented.
@@ -80,6 +81,8 @@ Color follows the terminal capabilities and `NO_COLOR`.
 | Home / End or `g` / `G` | First / last loaded chat or message line |
 | Page Up / Page Down | Move one visible page |
 | Enter | Open selected conversation at the latest messages |
+| `i` | Compose a message in the open chat |
+| Enter, then Ctrl+S | Review the draft, then confirm sending |
 | `o` | Load an older message page |
 | `r` | Refresh chats / return to the latest message page |
 | Esc | Return to chats; quit from the chat list |
@@ -92,7 +95,8 @@ refresh failure, previous results remain visible. Quit cancels and joins active
 reads before the UI entry point returns, and Bubble Tea restores the terminal.
 Titles and message content are escaped before styling; message text wraps to the
 available display width. Returning to the list discards the loaded message buffer.
-The UI writes no transcript to disk and performs no message sending or network upload.
+The UI writes no transcript or draft to disk and never uploads Personal content
+to Sessions. Confirmed sends go through the local Messages app.
 
 Conversations open with up to 20 recent messages in chronological order, with local
 times such as “Today at 9:37 PM,” “Yesterday at 4:30 PM,” or “Oct 18 at 2:15 PM.”
@@ -110,6 +114,33 @@ loaded messages. Press `r` to replace the buffer with the latest page, or use
 Plain CLI commands
 continue to work without an interactive terminal. The UI itself does not request
 Contacts access; use the explicit authorization command below when needed.
+
+## Send a Personal message
+
+Open a chat in `personal ui`, then press **i** to compose. Type or paste up to
+4,000 Unicode characters. Backspace edits at the end, Ctrl+U clears the draft,
+and Esc cancels. Shift+Enter inserts a newline when supported by the terminal;
+pasted newlines are preserved (shown escaped in the preview).
+
+Press **Enter** to review the recipient, local chat ID and message. Scroll with
+Up/Down or Page Up/Page Down when the preview is long. Press **Ctrl+S** to confirm
+one send, or Esc to return to editing. Sending requires this explicit confirmation.
+macOS may ask for permission for your terminal to control Messages. If denied,
+allow it under System Settings → Privacy & Security → Automation.
+
+“Send requested” means Messages accepted the automation command; delivery is
+unknown. The UI refreshes recent history once, but does not claim that a matching
+message was observed or delivered. Use `r` to read again if it has not appeared.
+If the outcome is unknown, check Messages before composing another send; the UI
+never retries an ambiguous request or retains it as a ready-to-resend draft.
+A known failure before requesting a send restores the draft for a new review.
+
+Only existing chats are supported. Targeting uses the selected local row ID and
+its database GUID, never a display name or guessed participant. Chat types that
+Messages cannot address through automation fail without creating a new chat or
+falling back to a different recipient. There is no attachment sending, standalone
+`personal send` CLI command, or guarantee of automation support for every chat.
+SQLite remains read-only: the Messages app owns all message writes.
 
 ## Browse Personal chats
 

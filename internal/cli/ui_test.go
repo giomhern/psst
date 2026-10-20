@@ -99,3 +99,27 @@ func TestUIForwardsOlderHistoryQuery(t *testing.T) {
 		t.Fatalf("older query not forwarded: %v", err)
 	}
 }
+
+func TestUIReceivesExplicitSendCapability(t *testing.T) {
+	calls := 0
+	var out bytes.Buffer
+	err := execute(context.Background(), []string{"personal", "ui"}, &out, dependencies{
+		sendMessage: func(_ context.Context, id, text string) (domain.SendResult, error) {
+			calls++
+			if id != "7" || text != "Synthetic" {
+				t.Fatal("send arguments changed")
+			}
+			return domain.SendResult{Status: domain.SendRequested}, nil
+		},
+		launchUI: func(ctx context.Context, _ io.Writer, source tui.Source) error {
+			if calls != 0 || source.Send == nil {
+				t.Fatal("send invoked during construction or capability missing")
+			}
+			_, err := source.Send(ctx, "7", "Synthetic")
+			return err
+		},
+	})
+	if err != nil || calls != 1 {
+		t.Fatalf("send wiring failed: %v", err)
+	}
+}

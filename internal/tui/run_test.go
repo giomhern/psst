@@ -21,7 +21,7 @@ func TestLoaderCancelsAndWaitsForActiveRead(t *testing.T) {
 	release := make(chan struct{})
 	result := make(chan tea.Msg, 1)
 	var calls atomic.Int32
-	gate, wait := newReadGate()
+	gate, wait := newOperationGate()
 	command := chatCommand(ctx, func(ctx context.Context) ([]domain.Conversation, error) {
 		calls.Add(1)
 		close(started)
@@ -58,7 +58,7 @@ func TestLoaderCancelsAndWaitsForActiveRead(t *testing.T) {
 }
 
 func TestLoaderSetsDeadline(t *testing.T) {
-	gate, wait := newReadGate()
+	gate, wait := newOperationGate()
 	command := chatCommand(context.Background(), func(ctx context.Context) ([]domain.Conversation, error) {
 		deadline, ok := ctx.Deadline()
 		if !ok || time.Until(deadline) > 8*time.Second {
@@ -104,7 +104,7 @@ func TestRunRejectsRedirectedOutputBeforeLoading(t *testing.T) {
 }
 
 func TestHistoryCommandCancellationAndDeadline(t *testing.T) {
-	gate, wait := newReadGate()
+	gate, wait := newOperationGate()
 	defer wait()
 	calls := 0
 	command, cancel := messageCommand(context.Background(), func(ctx context.Context, id string, _ int, _ *domain.MessageCursor) (domain.MessagePage, error) {
@@ -139,7 +139,7 @@ func TestHistoryCommandCancellationAndDeadline(t *testing.T) {
 }
 
 func TestHistoryShutdownJoinsCleanupAndBoundsReads(t *testing.T) {
-	gate, wait := newReadGate()
+	gate, wait := newOperationGate()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	started := make(chan struct{}, 2)
@@ -190,7 +190,7 @@ func TestHistoryShutdownJoinsCleanupAndBoundsReads(t *testing.T) {
 }
 
 func TestHistoryCommandPassesLimitAndSnapshotsCursor(t *testing.T) {
-	gate, wait := newReadGate()
+	gate, wait := newOperationGate()
 	defer wait()
 	before := &domain.MessageCursor{ChatID: "7", MessageID: 42}
 	command, cancel := messageCommand(context.Background(), func(_ context.Context, id string, limit int, cursor *domain.MessageCursor) (domain.MessagePage, error) {

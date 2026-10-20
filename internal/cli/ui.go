@@ -13,14 +13,15 @@ func newUICommand(deps dependencies) *cobra.Command {
 	limit := 50
 	cmd := &cobra.Command{
 		Use:   "ui",
-		Short: "Browse local chats in an interactive read-only interface",
-		Long:  "Browse recent locally synchronized chat titles with keyboard navigation and manual refresh. Requires an interactive terminal. Enter opens the latest 20 messages; Esc returns to chats. Press o for older pages, up to 200 retained messages; r returns to the latest page. No sending or uploading occurs.",
+		Short: "Browse local chats in an interactive interface",
+		Long:  "Browse recent locally synchronized chat titles with keyboard navigation and manual refresh. Requires an interactive terminal. Enter opens the latest 20 messages; Esc returns to chats. Press o for older pages, up to 200 retained messages; r returns to the latest page. Press i to compose, Enter to review, and Ctrl+S to confirm a Messages send. No uploading to Sessions occurs.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := domain.ValidateConversationLimit(limit); err != nil {
 				return err
 			}
 			return deps.launchUI(cmd.Context(), cmd.OutOrStdout(), tui.Source{
+				Send: deps.sendMessage,
 				Chats: func(ctx context.Context) ([]domain.Conversation, error) {
 					return loadChats(ctx, deps.openReader, limit)
 				},

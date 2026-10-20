@@ -234,7 +234,9 @@ Bubble Tea interface is being built after read-only history/pagination and befor
 the persisted Sessions slice. The UI now has a bounded chat list and a read-only
 conversation view opening with the latest 20 messages. Explicit older-page
 loading retains up to 200 messages with stable viewport anchoring; refresh
-returns to the latest page. This changes delivery order,
+returns to the latest page. The UI now also supports explicitly confirmed text
+sends to existing chats through Messages automation, with conservative outcome
+reporting; the proposed standalone send command remains unimplemented. This changes delivery order,
 not Personal/Sessions separation or the Sessions correctness contracts below.
 The standalone Personal UI initially launches with `psst personal ui`; the default
 `psst` command continues to show help until broader navigation is ready.

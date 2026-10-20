@@ -21,13 +21,18 @@ type LoadChats func(context.Context) ([]domain.Conversation, error)
 // It must honor ctx; it is invoked only by a background command.
 type LoadMessages func(context.Context, string, int, *domain.MessageCursor) (domain.MessagePage, error)
 
-// Source supplies the two independent read capabilities used by the interface.
+// SendMessage requests an explicitly confirmed text send. It must honor ctx,
+// never retry, and distinguish command acceptance from unknown delivery.
+type SendMessage func(context.Context, string, string) (domain.SendResult, error)
+
+// Source supplies independent local read and optional send capabilities.
 type Source struct {
 	Chats    LoadChats
 	Messages LoadMessages
+	Send     SendMessage
 }
 
-// Run owns the interactive program and waits for active reads to close on exit.
+// Run owns the interactive program and waits for active reads and sends to close on exit.
 // It requires terminal input and output; construction/help never loads data.
 func Run(ctx context.Context, input *os.File, output io.Writer, source Source) error {
 	out, ok := output.(*os.File)
@@ -42,7 +47,7 @@ func Run(ctx context.Context, input *os.File, output io.Writer, source Source) e
 
 func runProgram(ctx context.Context, input io.Reader, output io.Writer, source Source, options ...tea.ProgramOption) error {
 	runCtx, cancel := context.WithCancel(ctx)
-	gate, wait := newReadGate()
+	gate, wait := newOperationGate()
 	defer func() { cancel(); wait() }()
 	chats := chatCommand(runCtx, source.Chats, gate)
 	open := func(id string, request uint64, limit int, before *domain.MessageCursor) (tea.Cmd, context.CancelFunc) {
@@ -50,7 +55,13 @@ func runProgram(ctx context.Context, input io.Reader, output io.Writer, source S
 	}
 	opts := []tea.ProgramOption{tea.WithContext(runCtx), tea.WithInput(input), tea.WithOutput(output), tea.WithoutSignalHandler()}
 	opts = append(opts, options...)
-	_, err := tea.NewProgram(newModel(chats, open), opts...).Run()
+	m := newModel(chats, open)
+	if source.Send != nil {
+		m.send = func(id, text string, request uint64) tea.Cmd {
+			return sendCommand(runCtx, source.Send, gate, id, text, request)
+		}
+	}
+	_, err := tea.NewProgram(m, opts...).Run()
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -60,11 +71,11 @@ func runProgram(ctx context.Context, input io.Reader, output io.Writer, source S
 	return nil
 }
 
-type readGate func(func() tea.Msg, tea.Msg) tea.Cmd
+type operationGate func(func() tea.Msg, tea.Msg) tea.Cmd
 
-// Admission is bounded to two reads, allowing a new screen to load while a
+// Admission is bounded to two operations, allowing a new screen to load while a
 // canceled read closes. Further requests fail for manual retry, never queue.
-func newReadGate() (readGate, func()) {
+func newOperationGate() (operationGate, func()) {
 	var mu sync.Mutex
 	var active sync.WaitGroup
 	stopped, running := false, 0
@@ -92,7 +103,7 @@ func newReadGate() (readGate, func()) {
 	return gate, wait
 }
 
-func chatCommand(ctx context.Context, load LoadChats, gate readGate) tea.Cmd {
+func chatCommand(ctx context.Context, load LoadChats, gate operationGate) tea.Cmd {
 	return gate(func() tea.Msg {
 		operation, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
@@ -104,7 +115,7 @@ func chatCommand(ctx context.Context, load LoadChats, gate readGate) tea.Cmd {
 	}, chatsLoaded{err: context.Canceled})
 }
 
-func messageCommand(ctx context.Context, load LoadMessages, gate readGate, id string, request uint64, limit int, before *domain.MessageCursor) (tea.Cmd, context.CancelFunc) {
+func messageCommand(ctx context.Context, load LoadMessages, gate operationGate, id string, request uint64, limit int, before *domain.MessageCursor) (tea.Cmd, context.CancelFunc) {
 	if before != nil {
 		snapshot := *before
 		before = &snapshot
@@ -120,4 +131,16 @@ func messageCommand(ctx context.Context, load LoadMessages, gate readGate, id st
 		return messagesLoaded{request: request, page: page, err: err}
 	}, messagesLoaded{request: request, err: context.Canceled})
 	return func() tea.Msg { defer stop(); return command() }, stop
+}
+
+func sendCommand(ctx context.Context, send SendMessage, gate operationGate, id, text string, request uint64) tea.Cmd {
+	return gate(func() tea.Msg {
+		operation, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if operation.Err() != nil {
+			return sendCompleted{request: request, err: domain.ErrSendUnavailable}
+		}
+		result, err := send(operation, id, text)
+		return sendCompleted{request: request, result: result, err: err}
+	}, sendCompleted{request: request, err: domain.ErrSendUnavailable})
 }

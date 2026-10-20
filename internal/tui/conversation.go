@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -39,6 +40,16 @@ func (m model) startHistory(before *domain.MessageCursor) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateConversation(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.sending {
+		if msg.String() == "ctrl+c" {
+			m.quitting = true
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+	if m.composing {
+		return m.updateComposer(msg)
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		if m.cancel != nil {
@@ -56,7 +67,16 @@ func (m model) updateConversation(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.messageOffset = 0
 		m.historyLoading, m.historyFailed, m.historyLoaded, m.loadingOlder = false, false, false, false
 		m.nextBefore = nil
+		m.sendNotice = ""
 		return m, nil
+	case "i":
+		if m.send != nil && !m.historyLoading {
+			m.composing = true
+			m.confirming = false
+			m.draft, m.draftError, m.sendNotice = "", "", ""
+			m.composeOffset = 0
+			return m, nil
+		}
 	case "r":
 		if !m.historyLoading {
 			return m.startHistory(nil)
@@ -158,10 +178,15 @@ func (m model) conversationView() string {
 	}
 	lines := []string{
 		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(accent.Render("●  " + ansi.Truncate(title, width-3, "…"))),
-		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(muted.Render(ansi.Truncate(fmt.Sprintf("Personal · %d messages · Read-only", len(m.messages)), width, "…"))),
+		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(muted.Render(ansi.Truncate(m.conversationSubtitle(), width, "…"))),
 		muted.Render(strings.Repeat("─", width)),
 	}
 	content := m.messageLines()
+	offset := m.messageOffset
+	if m.composing {
+		content = m.composerLines()
+		offset = max(0, min(m.composeOffset, max(0, len(content)-m.visibleRows())))
+	}
 	status := "o older · r latest"
 	if m.historyLoaded && m.nextBefore == nil {
 		status = "End of locally synchronized history · r latest"
@@ -170,8 +195,8 @@ func (m model) conversationView() string {
 		status = "200-message limit reached · r latest"
 	}
 	if len(content) > 0 {
-		end := min(len(content), m.messageOffset+m.visibleRows())
-		lines = append(lines, content[m.messageOffset:end]...)
+		end := min(len(content), offset+m.visibleRows())
+		lines = append(lines, content[offset:end]...)
 	} else {
 		switch {
 		case m.historyLoading:
@@ -196,10 +221,32 @@ func (m model) conversationView() string {
 			status = "Refresh failed · showing previous messages · r retries"
 		}
 	}
+	footer := "↑↓/jk scroll · o older · r latest · Esc chats · q quit"
+	if m.send != nil {
+		footer = "i compose · ↑↓ scroll · o older · r latest · Esc chats · q quit"
+	}
+	if m.sendNotice != "" && !m.historyLoading && !m.historyFailed {
+		status = m.sendNotice
+	}
+	if m.composing {
+		status = fmt.Sprintf("Draft · %d / %d characters", utf8.RuneCountInString(m.draft), domain.MaxSendTextRunes)
+		footer = "Enter review · Esc cancel · Ctrl+U clear · Ctrl+C quit"
+		if m.confirming {
+			status = "Review recipient and message before sending"
+			footer = "↑↓ review · Ctrl+S confirm send · Esc edit"
+		}
+		if m.draftError != "" {
+			status = m.draftError
+		}
+	}
+	if m.sending {
+		status = "Requesting send… · do not retry"
+		footer = "Waiting for Messages · Ctrl+C quit"
+	}
 	for len(lines) < 3+m.visibleRows() {
 		lines = append(lines, "")
 	}
-	lines = append(lines, muted.Render(strings.Repeat("─", width)), muted.Render(status), muted.Render("↑↓/jk scroll · o older · r latest · Esc chats · q quit"))
+	lines = append(lines, muted.Render(strings.Repeat("─", width)), muted.Render(status), muted.Render(footer))
 	if m.hasSidebar() {
 		sidebar := m.sidebarLines()
 		divider := muted.Render(" │ ")

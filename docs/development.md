@@ -214,7 +214,7 @@ Each screen allows only one load at a time, including manual refresh. A monotoni
 request ID travels with every history result: Update ignores results from a
 conversation that has since been left or replaced. Cancellation alone cannot
 prevent an already completed result from arriving late. The shared admission gate
-bounds active reads to two, allowing a new screen to load while a canceled read
+bounds active callbacks to two, allowing a new screen to load while a canceled read
 closes. Further requests fail for manual retry rather than queueing. The runner
 captures an operation context in the command closure instead of storing request
 contexts in model structs. Each read gets eight seconds; the existing optional
@@ -232,7 +232,8 @@ scrolling over the retained history and initial position at its bottom. The view
 and rendered dimensions are bounded;
 small terminals show a resize prompt. No pointer to the model is shared with I/O
 workers. There is no automatic polling, reader held for the whole UI session,
-message sending or Sessions connection in this checkpoint.
+Sessions connection in this checkpoint. Confirmed text sends use a separate
+optional callback described below.
 
 Tests use synthetic chats for state transitions, navigation, viewport bounds,
 refresh/selection retention, safe errors and escaping. A headless program test
@@ -297,3 +298,39 @@ Message bodies still wrap at at most 56 text cells; outgoing bubbles align to th
 right edge of the expanded pane. Resize captures and restores the history anchor
 before clamping the viewport. Reported width is bounded at 4,096 columns to
 protect rendering allocations from implausible size reports.
+
+
+## Confirmed Personal sends
+
+`domain.SendStatus` is a small enum made with typed constants and `iota`. Its zero
+value means no send was requested; success never defaults to a delivery claim.
+`personal.Send` validates the text and local chat ID, opens a read-only target
+reader, resolves exactly that row's GUID, and closes it before invoking automation.
+Target lookup or close failure prevents the send entirely. No Contacts lookup,
+participant guessing, new-chat creation, or fallback routing occurs.
+
+`internal/personal/applescript` uses a fixed script supplied on stdin to the fixed
+`/usr/bin/osascript` executable. GUID and text are argv data, never interpolated
+into source or a shell. Output is capped at 64 bytes, stderr is discarded, and
+only allowlisted response tokens become outcomes. The initial target-lookup
+phase may fail as definitely not requested; any unclassified failure after the
+send phase starts is unknown. macOS permission denial is a separate safe error.
+Process startup failure is known unsent; timeout or process failure after launch
+is conservatively unknown. Contexts bound automation to 30 seconds and own
+process cleanup; the adapter never retries or exposes script/error payloads.
+
+The UI's optional `Source.Send` capability keeps platform code outside the model.
+The composer handles text and paste in Update, with a bounded in-memory draft.
+Enter freezes the draft for review; only Ctrl+S on that screen creates a send
+command. A pending send blocks other navigation or sends; Ctrl+C can still quit.
+The operation gate joins send callbacks as well as reads during shutdown.
+Quitting during a pending send can leave an unknown outcome; check Messages
+before sending again. No automatic resend or delivery inference is implemented.
+
+A requested send clears its draft and triggers one recent-history read. A known
+unsent failure restores the draft for editing and a fresh confirmation. Unknown
+outcomes discard the pending draft and show a check-Messages notice. Safe static
+notices never display raw process errors. Editing is initially at the end of the
+draft; backspace removes one Unicode code point, not an entire grapheme cluster.
+Tests and terminal previews use fake senders; the fixed AppleScript was compiled
+for syntax validation without being executed. Real delivery has not been tested.
