@@ -44,8 +44,8 @@ func (r *Reader) ListConversations(ctx context.Context, limit int) ([]domain.Con
 	return conversations, nil
 }
 
-// ListMessages reads a bounded recent page without invoking Contacts or logging
-// message content. Sender identifiers remain local display data.
+// ListMessages reads a bounded recent page with optional local Contacts labels.
+// Message content and sender identifiers are never logged.
 func (r *Reader) ListMessages(ctx context.Context, chatID string, limit int) ([]domain.Message, error) {
 	page, err := r.ListMessagePage(ctx, chatID, limit, nil)
 	return page.Messages, err
@@ -61,6 +61,9 @@ func (r *Reader) ListMessagePage(ctx context.Context, chatID string, limit int, 
 		return domain.MessagePage{}, domain.ErrConversationNotFound
 	}
 	if err != nil {
+		return domain.MessagePage{}, conversationError(ctx, err)
+	}
+	if err := resolveSenders(ctx, page.Messages, r.names); err != nil {
 		return domain.MessagePage{}, conversationError(ctx, err)
 	}
 	return page, nil

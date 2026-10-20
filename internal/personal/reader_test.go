@@ -84,7 +84,7 @@ func TestPersonalHistorySanitizesDriverErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := writer.Exec(string(schema) + "INSERT INTO chat(ROWID,guid) VALUES(1,'synthetic'); INSERT INTO chat_message_join VALUES(1,1)"); err != nil {
+	if _, err := writer.Exec(string(schema) + "INSERT INTO chat(ROWID,guid) VALUES(1,'synthetic'); INSERT INTO chat_message_join VALUES(1,1); INSERT INTO handle VALUES(1,'alex@example.test')"); err != nil {
 		t.Fatal(err)
 	}
 	reader, err := openReader(context.Background(), path)
@@ -92,11 +92,11 @@ func TestPersonalHistorySanitizesDriverErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	resolver := &fakeNames{}
+	resolver := &fakeNames{names: map[string]string{"alex@example.test": "Alex"}}
 	reader.names = resolver
 	rows, err := reader.ListMessages(context.Background(), "1", 20)
-	if resolver.called {
-		t.Fatal("history unexpectedly queried Contacts")
+	if !resolver.called || len(rows) != 1 || rows[0].SenderName != "Alex" || rows[0].Sender != "alex@example.test" {
+		t.Fatal("history lost the contact name or sender identifier")
 	}
 	if err != nil || len(rows) != 1 || rows[0].Text != "synthetic-private-message" {
 		t.Fatalf("history = %v, %v", rows, err)

@@ -156,9 +156,9 @@ func TestMessagePresentation(t *testing.T) {
 		}
 	}
 	m := newModel(nil, nil)
-	m.messages = []domain.Message{{FromMe: true, Sender: "unused", SentAt: time.Date(2026, 1, 1, 12, 0, 0, 0, time.FixedZone("offset", 3600)), Text: "hello"}, {Text: "hi"}}
+	m.messages = []domain.Message{{FromMe: true, Sender: "unused", SentAt: time.Date(2026, 1, 1, 12, 0, 0, 0, time.FixedZone("offset", 3600)), Text: "hello"}, {Text: "hi"}, {Sender: "alex@example.test", SenderName: "Alex", Text: "hello"}}
 	lines := strings.Join(m.messageLines(), "\n")
-	for _, want := range []string{"Me · 2026-01-01T11:00:00Z", "[unknown sender] · [unknown time]"} {
+	for _, want := range []string{"Me · 2026-01-01T11:00:00Z", "[unknown sender] · [unknown time]", "Alex · [unknown time]"} {
 		if !strings.Contains(lines, want) {
 			t.Fatalf("missing %q", want)
 		}

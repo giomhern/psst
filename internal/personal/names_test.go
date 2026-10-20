@@ -113,3 +113,52 @@ func TestContactLookupBudgetAllowsNativeStartupAndHonorsParent(t *testing.T) {
 		t.Fatalf("lookup did not preserve the earlier parent deadline: %v", err)
 	}
 }
+
+func TestSenderNamesPreserveIdentifiersAndDeduplicate(t *testing.T) {
+	messages := []domain.Message{
+		{Sender: "alex@example.test"}, {Sender: "alex@example.test"},
+		{Sender: "unknown@example.test"}, {FromMe: true, Sender: "self@example.test"}, {},
+	}
+	resolver := &fakeNames{names: map[string]string{"alex@example.test": " Alex "}}
+	if err := resolveSenders(context.Background(), messages, resolver); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(resolver.requested, []string{"alex@example.test", "unknown@example.test"}) {
+		t.Fatal("lookup was not bounded to distinct incoming senders")
+	}
+	for i, message := range messages {
+		want := ""
+		if i < 2 {
+			want = "Alex"
+		}
+		if message.SenderName != want {
+			t.Fatalf("message %d: name = %q", i, message.SenderName)
+		}
+	}
+	if messages[0].Sender != "alex@example.test" {
+		t.Fatal("name replaced identifier")
+	}
+}
+
+func TestSenderNameFallbackBoundAndCancellation(t *testing.T) {
+	for _, resolver := range []nameResolver{nil, &fakeNames{err: errors.New("unavailable")}, &fakeNames{err: context.DeadlineExceeded}} {
+		messages := []domain.Message{{Sender: "alex@example.test"}}
+		if err := resolveSenders(context.Background(), messages, resolver); err != nil || messages[0].SenderName != "" {
+			t.Fatal("optional lookup failure prevented history")
+		}
+	}
+	messages := []domain.Message{{Sender: "a"}}
+	resolver := &fakeNames{names: map[string]string{"a": strings.Repeat("猫", 300)}}
+	if err := resolveSenders(context.Background(), messages, resolver); err != nil || utf8.RuneCountInString(messages[0].SenderName) != 200 {
+		t.Fatal("sender label was not bounded")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := resolveSenders(ctx, messages, nil); !errors.Is(err, context.Canceled) {
+		t.Fatal("parent cancellation lost")
+	}
+	resolver = &fakeNames{}
+	if err := resolveSenders(context.Background(), []domain.Message{{FromMe: true, Sender: "a"}, {}}, resolver); err != nil || resolver.called {
+		t.Fatal("unnecessary sender lookup")
+	}
+}

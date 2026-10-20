@@ -19,10 +19,12 @@ const MaxMessageTextRunes = 4000
 // zero value means the stored timestamp is absent or unsupported. Sender is a
 // local identifier, not a verified identity or send destination.
 type Message struct {
-	ID                 string
-	SentAt             time.Time
-	FromMe             bool
-	Sender             string
+	ID     string
+	SentAt time.Time
+	FromMe bool
+	Sender string
+	// SenderName is an optional local Contacts label; Sender remains the identifier.
+	SenderName         string
 	Text               string
 	TextTruncated      bool
 	HasAttachments     bool

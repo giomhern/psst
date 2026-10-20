@@ -86,7 +86,7 @@ available display width. Returning to the list discards the loaded message page.
 The UI writes no transcript to disk and performs no message sending or network upload.
 
 Conversations show up to 20 recent messages in chronological order (UTC), with
-sender identifiers and placeholders for attachments or unsupported rich content.
+optional contact names (falling back to sender identifiers) and placeholders for attachments or unsupported rich content.
 Unknown times follow known times. Scroll within this page using the keys above;
 older-page loading is a later increment. Use `personal read <chat ID>` and its
 `--before` cursor for older history today. Plain CLI commands
@@ -134,11 +134,12 @@ The default page contains up to 20 recent messages; `--limit` accepts 1–100.
 Rows are selected by normalized stored date and message row ID, then printed
 oldest-first within that page. Unknown dates follow dated rows and are selected
 only if the page has room after dated messages. Times use UTC. `Me` marks outgoing
-rows; incoming senders use local phone/email identifiers, with no Contacts lookup.
+rows; incoming senders use optional local contact names, falling back to phone/email
+identifiers. Names remain display labels, not verified identities.
 Missing chats produce a clear error; existing empty chats get an empty-history message.
 
 This command explicitly prints private message text. It neither sends nor uploads
-anything. Sender identifiers and text are quoted to escape terminal controls.
+anything. Sender labels and text are quoted to escape terminal controls.
 Text is capped at 4,000 Unicode code points per row with a visible truncation label.
 Attachments, rich bodies and embedded content use placeholders; attachment files
 are not opened and rich bodies are not decoded. Some modern messages will therefore
@@ -284,3 +285,7 @@ The [architecture and protocol](architecture-design-v0.1.md) define the complete
 plan and acceptance criteria. The filename is historical; the document is v0.3.
 [AGENTS.md](AGENTS.md) defines Go conventions, the learning workflow, privacy
 constraints, and frequent verified commits and pushes.
+
+History resolves incoming sender names locally, including participants in named
+groups. Contacts lookup is optional and bounded; denied access or a timeout falls
+back to the sender identifier. It never prompts for permission automatically.

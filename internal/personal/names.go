@@ -69,6 +69,10 @@ func lookupNames(ctx context.Context, chats []domain.Conversation, resolver name
 			handles = append(handles, chat.Participants...)
 		}
 	}
+	return lookupHandles(ctx, handles, resolver)
+}
+
+func lookupHandles(ctx context.Context, handles []string, resolver nameResolver) (map[string]string, string, contacts.MatchCounts) {
 	var names map[string]string
 	status := "skipped"
 	counts := contacts.MatchCounts{}
@@ -96,4 +100,32 @@ func lookupNames(ctx context.Context, chats []domain.Conversation, resolver name
 		}
 	}
 	return names, status, counts
+}
+
+// Resolve only incoming senders in this bounded page, including named groups.
+// Names remain optional display labels and never replace sender identifiers.
+func resolveSenders(ctx context.Context, messages []domain.Message, resolver nameResolver) error {
+	handles := make([]string, 0, len(messages))
+	seen := make(map[string]bool)
+	for _, message := range messages {
+		handle := strings.TrimSpace(message.Sender)
+		if !message.FromMe && handle != "" && !seen[handle] {
+			handles = append(handles, handle)
+			seen[handle] = true
+		}
+	}
+	names, _, _ := lookupHandles(ctx, handles, resolver)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	for i := range messages {
+		message := &messages[i]
+		message.SenderName = ""
+		if message.FromMe {
+			continue
+		}
+		name := []rune(strings.TrimSpace(names[strings.TrimSpace(message.Sender)]))
+		message.SenderName = string(name[:min(len(name), 200)])
+	}
+	return nil
 }

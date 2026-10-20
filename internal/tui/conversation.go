@@ -72,6 +72,8 @@ func (m model) messageLines() []string {
 		sender := message.Sender
 		if message.FromMe {
 			sender = "Me"
+		} else if message.SenderName != "" {
+			sender = message.SenderName
 		} else if sender == "" {
 			sender = "[unknown sender]"
 		}

@@ -241,3 +241,9 @@ only synthetic data, including Unicode titles and message bodies.
 
 References: [Bubble Tea v2](https://github.com/charmbracelet/bubbletea),
 [v2 declarative views](https://github.com/charmbracelet/bubbletea/blob/main/UPGRADE_GUIDE_V2.md).
+
+History pages now use the same optional Contacts lookup budget as chat titles.
+`Message.SenderName` carries a bounded display label separately from `Sender`;
+UI and CLI prefer that label while outgoing messages remain “Me.” Each page
+looks up only distinct incoming handles. Named groups keep their stored title
+while their individual senders resolve independently.

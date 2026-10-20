@@ -55,7 +55,7 @@ func TestReadRendersUTCAndEscapesPrivateContent(t *testing.T) {
 		{ID: "3", HasRichContent: true},
 		{ID: "4", Text: "bounded", TextTruncated: true, HasAttachments: true},
 		{ID: "5"},
-		{ID: "6", Text: "caption", HasEmbeddedContent: true},
+		{ID: "6", Text: "caption", HasEmbeddedContent: true, Sender: "alex@example.test", SenderName: "Alex\n\x1b[31m"},
 	}}
 	var out bytes.Buffer
 	err := execute(context.Background(), []string{"personal", "read", "19", "--limit", "6"}, &out, dependencies{openMessages: func(context.Context) (messageReader, error) { return reader, nil }})
@@ -66,7 +66,7 @@ func TestReadRendersUTCAndEscapesPrivateContent(t *testing.T) {
 		t.Fatal("missing read deadline")
 	}
 	text := out.String()
-	for _, want := range []string{"2026-01-01T00:00:00Z", `"Me"`, `hello\n\t\x1b[31m\u202e猫`, "[attachment not shown]", "[rich content not decoded]", "[text truncated]", "[unknown time]", "[unknown sender]", "[no supported text]", "[embedded content not decoded]"} {
+	for _, want := range []string{"2026-01-01T00:00:00Z", `"Me"`, `hello\n\t\x1b[31m\u202e猫`, "[attachment not shown]", "[rich content not decoded]", "[text truncated]", "[unknown time]", "[unknown sender]", "[no supported text]", "[embedded content not decoded]", `Alex\n\x1b[31m`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}
