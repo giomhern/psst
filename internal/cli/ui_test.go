@@ -68,7 +68,7 @@ func TestUIHistoryLoaderClosesAndPropagatesFailures(t *testing.T) {
 		err := execute(context.Background(), []string{"personal", "ui"}, &out, dependencies{
 			openMessages: func(context.Context) (messageReader, error) { return reader, nil },
 			launchUI: func(ctx context.Context, _ io.Writer, source tui.Source) error {
-				page, err := source.Messages(ctx, "7")
+				page, err := source.Messages(ctx, "7", 20, nil)
 				if !reader.closed || reader.chatID != "7" || reader.limit != 20 || reader.before != nil {
 					t.Fatal("incorrect history query or unclosed reader")
 				}
@@ -81,5 +81,21 @@ func TestUIHistoryLoaderClosesAndPropagatesFailures(t *testing.T) {
 		if fail && (!errors.Is(err, context.Canceled) || !errors.Is(err, reader.closeErr)) {
 			t.Fatalf("lost read/close errors: %v", err)
 		}
+	}
+}
+
+func TestUIForwardsOlderHistoryQuery(t *testing.T) {
+	reader := &stubMessages{}
+	cursor := &domain.MessageCursor{ChatID: "7", MessageID: 42}
+	var out bytes.Buffer
+	err := execute(context.Background(), []string{"personal", "ui"}, &out, dependencies{
+		openMessages: func(context.Context) (messageReader, error) { return reader, nil },
+		launchUI: func(ctx context.Context, _ io.Writer, source tui.Source) error {
+			_, err := source.Messages(ctx, "7", 3, cursor)
+			return err
+		},
+	})
+	if err != nil || !reader.closed || reader.limit != 3 || reader.before != cursor || reader.chatID != "7" {
+		t.Fatalf("older query not forwarded: %v", err)
 	}
 }

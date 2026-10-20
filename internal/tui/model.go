@@ -25,24 +25,26 @@ type messagesLoaded struct {
 	err     error
 }
 
-type openConversation func(string, uint64) (tea.Cmd, context.CancelFunc)
+type openConversation func(string, uint64, int, *domain.MessageCursor) (tea.Cmd, context.CancelFunc)
 
 type chatItem struct{ id, title string }
 
 type model struct {
-	load                                 tea.Cmd
-	now                                  func() time.Time
-	open                                 openConversation
-	cancel                               context.CancelFunc
-	conversation                         *chatItem
-	request                              uint64
-	messages                             []domain.Message
-	messageOffset                        int
-	historyLoading, historyFailed, older bool
-	chats                                []chatItem
-	selected, offset                     int
-	width, height                        int
-	loading, failed, quitting            bool
+	load                          tea.Cmd
+	now                           func() time.Time
+	open                          openConversation
+	cancel                        context.CancelFunc
+	conversation                  *chatItem
+	request                       uint64
+	messages                      []domain.Message
+	messageOffset                 int
+	historyLoading, historyFailed bool
+	historyLoaded, loadingOlder   bool
+	nextBefore                    *domain.MessageCursor
+	chats                         []chatItem
+	selected, offset              int
+	width, height                 int
+	loading, failed, quitting     bool
 }
 
 func newModel(load tea.Cmd, open openConversation) model {
@@ -69,9 +71,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancel = nil
 		}
 		if msg.err == nil {
-			m.messages = msg.page.Messages[:min(len(msg.page.Messages), 20)]
-			m.older = msg.page.NextBefore != nil
-			m.messageOffset = max(0, len(m.messageLines())-m.visibleRows())
+			m = m.applyHistory(msg.page)
 		}
 	case chatsLoaded:
 		m.loading = false
@@ -99,7 +99,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "enter" && len(m.chats) > 0 && m.open != nil {
 			chat := m.chats[m.selected]
 			m.conversation = &chat
-			return m.startHistory()
+			return m.startHistory(nil)
 		}
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":

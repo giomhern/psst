@@ -232,8 +232,9 @@ The first release authenticates CLI upgrades with the Authorization header. Befo
 **Implementation ordering update:** At the maintainer's request, the Personal
 Bubble Tea interface is being built after read-only history/pagination and before
 the persisted Sessions slice. The UI now has a bounded chat list and a read-only
-conversation view of the latest 20 messages, with scrolling within that page.
-Loading older pages follows. This changes delivery order,
+conversation view opening with the latest 20 messages. Explicit older-page
+loading retains up to 200 messages with stable viewport anchoring; refresh
+returns to the latest page. This changes delivery order,
 not Personal/Sessions separation or the Sessions correctness contracts below.
 The standalone Personal UI initially launches with `psst personal ui`; the default
 `psst` command continues to show help until broader navigation is ready.

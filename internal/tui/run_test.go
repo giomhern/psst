@@ -107,7 +107,7 @@ func TestHistoryCommandCancellationAndDeadline(t *testing.T) {
 	gate, wait := newReadGate()
 	defer wait()
 	calls := 0
-	command, cancel := messageCommand(context.Background(), func(ctx context.Context, id string) (domain.MessagePage, error) {
+	command, cancel := messageCommand(context.Background(), func(ctx context.Context, id string, _ int, _ *domain.MessageCursor) (domain.MessagePage, error) {
 		calls++
 		if id != "7" {
 			t.Fatal("wrong conversation")
@@ -117,20 +117,20 @@ func TestHistoryCommandCancellationAndDeadline(t *testing.T) {
 			t.Fatal("history has no bounded deadline")
 		}
 		return domain.MessagePage{Messages: []domain.Message{{Text: "Synthetic"}}}, nil
-	}, gate, "7", 9)
+	}, gate, "7", 9, 20, nil)
 	cancel()
 	message := command().(messagesLoaded)
 	if calls != 0 || message.request != 9 || !errors.Is(message.err, context.Canceled) {
 		t.Fatal("canceled command started I/O or lost request ID")
 	}
-	command, cancel = messageCommand(context.Background(), func(ctx context.Context, id string) (domain.MessagePage, error) {
+	command, cancel = messageCommand(context.Background(), func(ctx context.Context, id string, _ int, _ *domain.MessageCursor) (domain.MessagePage, error) {
 		calls++
 		deadline, ok := ctx.Deadline()
 		if !ok || time.Until(deadline) > 8*time.Second || id != "7" {
 			t.Fatal("incorrect history context or ID")
 		}
 		return domain.MessagePage{}, nil
-	}, gate, "7", 10)
+	}, gate, "7", 10, 20, nil)
 	defer cancel()
 	message = command().(messagesLoaded)
 	if calls != 1 || message.request != 10 || message.err != nil {
@@ -145,7 +145,7 @@ func TestHistoryShutdownJoinsCleanupAndBoundsReads(t *testing.T) {
 	started := make(chan struct{}, 2)
 	cleaning := make(chan struct{}, 2)
 	release := make(chan struct{})
-	load := func(ctx context.Context, _ string) (domain.MessagePage, error) {
+	load := func(ctx context.Context, _ string, _ int, _ *domain.MessageCursor) (domain.MessagePage, error) {
 		started <- struct{}{}
 		<-ctx.Done()
 		cleaning <- struct{}{}
@@ -154,16 +154,16 @@ func TestHistoryShutdownJoinsCleanupAndBoundsReads(t *testing.T) {
 	}
 	commands := make([]tea.Cmd, 2)
 	for i := range commands {
-		command, stop := messageCommand(ctx, load, gate, "1", uint64(i+1))
+		command, stop := messageCommand(ctx, load, gate, "1", uint64(i+1), 20, nil)
 		defer stop()
 		commands[i] = command
 		go command()
 		<-started
 	}
-	late, stop := messageCommand(ctx, func(context.Context, string) (domain.MessagePage, error) {
+	late, stop := messageCommand(ctx, func(context.Context, string, int, *domain.MessageCursor) (domain.MessagePage, error) {
 		t.Error("excess read started")
 		return domain.MessagePage{}, nil
-	}, gate, "2", 3)
+	}, gate, "2", 3, 20, nil)
 	defer stop()
 	if result := late().(messagesLoaded); result.err == nil {
 		t.Fatal("excess read was not rejected")
@@ -186,5 +186,22 @@ func TestHistoryShutdownJoinsCleanupAndBoundsReads(t *testing.T) {
 	}
 	if result := late().(messagesLoaded); result.err == nil {
 		t.Fatal("read admitted after shutdown")
+	}
+}
+
+func TestHistoryCommandPassesLimitAndSnapshotsCursor(t *testing.T) {
+	gate, wait := newReadGate()
+	defer wait()
+	before := &domain.MessageCursor{ChatID: "7", MessageID: 42}
+	command, cancel := messageCommand(context.Background(), func(_ context.Context, id string, limit int, cursor *domain.MessageCursor) (domain.MessagePage, error) {
+		if id != "7" || limit != 3 || cursor == nil || cursor.MessageID != 42 || cursor == before {
+			t.Fatal("history command lost its bounded query snapshot")
+		}
+		return domain.MessagePage{}, nil
+	}, gate, "7", 5, 3, before)
+	defer cancel()
+	before.MessageID = 99
+	if message := command().(messagesLoaded); message.err != nil || message.request != 5 {
+		t.Fatal("paginated command failed")
 	}
 }

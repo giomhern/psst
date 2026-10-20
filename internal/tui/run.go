@@ -17,9 +17,9 @@ import (
 // It must honor ctx. The model never invokes it inside Update or View.
 type LoadChats func(context.Context) ([]domain.Conversation, error)
 
-// LoadMessages returns a bounded recent page and closes any resources it opens.
+// LoadMessages returns a bounded history page and closes any resources it opens.
 // It must honor ctx; it is invoked only by a background command.
-type LoadMessages func(context.Context, string) (domain.MessagePage, error)
+type LoadMessages func(context.Context, string, int, *domain.MessageCursor) (domain.MessagePage, error)
 
 // Source supplies the two independent read capabilities used by the interface.
 type Source struct {
@@ -45,8 +45,8 @@ func runProgram(ctx context.Context, input io.Reader, output io.Writer, source S
 	gate, wait := newReadGate()
 	defer func() { cancel(); wait() }()
 	chats := chatCommand(runCtx, source.Chats, gate)
-	open := func(id string, request uint64) (tea.Cmd, context.CancelFunc) {
-		return messageCommand(runCtx, source.Messages, gate, id, request)
+	open := func(id string, request uint64, limit int, before *domain.MessageCursor) (tea.Cmd, context.CancelFunc) {
+		return messageCommand(runCtx, source.Messages, gate, id, request, limit, before)
 	}
 	opts := []tea.ProgramOption{tea.WithContext(runCtx), tea.WithInput(input), tea.WithOutput(output), tea.WithoutSignalHandler()}
 	opts = append(opts, options...)
@@ -104,7 +104,11 @@ func chatCommand(ctx context.Context, load LoadChats, gate readGate) tea.Cmd {
 	}, chatsLoaded{err: context.Canceled})
 }
 
-func messageCommand(ctx context.Context, load LoadMessages, gate readGate, id string, request uint64) (tea.Cmd, context.CancelFunc) {
+func messageCommand(ctx context.Context, load LoadMessages, gate readGate, id string, request uint64, limit int, before *domain.MessageCursor) (tea.Cmd, context.CancelFunc) {
+	if before != nil {
+		snapshot := *before
+		before = &snapshot
+	}
 	operation, stop := context.WithCancel(ctx)
 	command := gate(func() tea.Msg {
 		bounded, release := context.WithTimeout(operation, 8*time.Second)
@@ -112,7 +116,7 @@ func messageCommand(ctx context.Context, load LoadMessages, gate readGate, id st
 		if bounded.Err() != nil {
 			return messagesLoaded{request: request, err: bounded.Err()}
 		}
-		page, err := load(bounded, id)
+		page, err := load(bounded, id, limit, before)
 		return messagesLoaded{request: request, page: page, err: err}
 	}, messagesLoaded{request: request, err: context.Canceled})
 	return func() tea.Msg { defer stop(); return command() }, stop

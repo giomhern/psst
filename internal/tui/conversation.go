@@ -12,6 +12,8 @@ import (
 )
 
 const sidebarWidth = 26
+const historyPageSize = 20
+const maxRetainedMessages = 200
 
 func (m model) hasSidebar() bool { return m.conversation != nil && m.width >= 96 }
 
@@ -23,10 +25,15 @@ func (m model) contentWidth() int {
 	return max(1, min(width, 88))
 }
 
-func (m model) startHistory() (tea.Model, tea.Cmd) {
+func (m model) startHistory(before *domain.MessageCursor) (tea.Model, tea.Cmd) {
 	m.request++
 	m.historyLoading, m.historyFailed = true, false
-	command, cancel := m.open(m.conversation.id, m.request)
+	m.loadingOlder = before != nil
+	limit := historyPageSize
+	if m.loadingOlder {
+		limit = min(limit, maxRetainedMessages-len(m.messages))
+	}
+	command, cancel := m.open(m.conversation.id, m.request, limit, before)
 	m.cancel = cancel
 	return m, command
 }
@@ -47,11 +54,16 @@ func (m model) updateConversation(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.conversation = nil
 		m.messages = nil
 		m.messageOffset = 0
-		m.historyLoading, m.historyFailed, m.older = false, false, false
+		m.historyLoading, m.historyFailed, m.historyLoaded, m.loadingOlder = false, false, false, false
+		m.nextBefore = nil
 		return m, nil
 	case "r":
 		if !m.historyLoading {
-			return m.startHistory()
+			return m.startHistory(nil)
+		}
+	case "o":
+		if !m.historyLoading && m.nextBefore != nil && len(m.messages) < maxRetainedMessages {
+			return m.startHistory(m.nextBefore)
 		}
 	case "up", "k":
 		m.messageOffset--
@@ -75,11 +87,13 @@ func (m model) clampMessages() model {
 }
 
 // Text is escaped before wrapping, so database content cannot emit terminal
-// commands or inject layout. Only the bounded recent page lives in model state.
-func (m model) messageLines() []string {
+// commands or inject layout. Only the bounded history buffer lives in model state.
+func (m model) messageLines() []string { return m.renderMessages(m.messages) }
+
+func (m model) renderMessages(messages []domain.Message) []string {
 	var lines []string
 	now := m.now()
-	for _, message := range m.messages {
+	for _, message := range messages {
 		sender := message.Sender
 		if message.FromMe {
 			sender = "Me"
@@ -144,13 +158,16 @@ func (m model) conversationView() string {
 	}
 	lines := []string{
 		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(accent.Render("●  " + ansi.Truncate(title, width-3, "…"))),
-		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(muted.Render(ansi.Truncate(fmt.Sprintf("Personal · %d recent messages · Read-only", len(m.messages)), width, "…"))),
+		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(muted.Render(ansi.Truncate(fmt.Sprintf("Personal · %d messages · Read-only", len(m.messages)), width, "…"))),
 		muted.Render(strings.Repeat("─", width)),
 	}
 	content := m.messageLines()
-	status := "Recent page · r refresh"
-	if m.older {
-		status = "Older history available via personal read"
+	status := "o older · r latest"
+	if m.historyLoaded && m.nextBefore == nil {
+		status = "End of locally synchronized history · r latest"
+	}
+	if m.nextBefore != nil && len(m.messages) >= maxRetainedMessages {
+		status = "200-message limit reached · r latest"
 	}
 	if len(content) > 0 {
 		end := min(len(content), m.messageOffset+m.visibleRows())
@@ -167,17 +184,22 @@ func (m model) conversationView() string {
 	}
 	if m.historyLoading {
 		status = "Loading local messages…"
+		if m.loadingOlder {
+			status = "Loading older messages…"
+		}
 	}
 	if m.historyFailed {
 		status = "Could not load messages · r retries"
-		if len(m.messages) > 0 {
+		if m.loadingOlder {
+			status = "Older messages failed · o retries"
+		} else if len(m.messages) > 0 {
 			status = "Refresh failed · showing previous messages · r retries"
 		}
 	}
 	for len(lines) < 3+m.visibleRows() {
 		lines = append(lines, "")
 	}
-	lines = append(lines, muted.Render(strings.Repeat("─", width)), muted.Render(status), muted.Render("↑↓/jk scroll · PgUp/PgDn page · Esc chats · q quit"))
+	lines = append(lines, muted.Render(strings.Repeat("─", width)), muted.Render(status), muted.Render("↑↓/jk scroll · o older · r latest · Esc chats · q quit"))
 	if m.hasSidebar() {
 		sidebar := m.sidebarLines()
 		divider := muted.Render(" │ ")

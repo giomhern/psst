@@ -46,10 +46,11 @@ and Cobra commands, backed by the adapter and synthetic fixtures. A first
 `personal read <chat>` now supports bounded keyset pages with tested date
 conversion, safe plain-text output, and an explicit unknown-time ordering.
 `--before` continues from the token printed by the previous page. The first Bubble
-Tea chat list now launches with `personal ui`. Next, connect
-chat selection to a conversation view and then scrolling to older history.
+Tea interface launches with `personal ui`, opens selected conversations, and
+loads older pages explicitly with `o`.
 Per maintainer preference, Personal UI work precedes the persisted Sessions slice.
-Rich-body support remains a separate future slice.
+Supported attributed-body archives now yield bounded backing text; full rich
+formatting and other archive layouts remain future work.
 Build session persistence before delivery acknowledgements, using real PostgreSQL integration
 tests for transaction and locking behavior. Add dependencies and migrations only
 when the corresponding slice needs them.
@@ -205,7 +206,8 @@ loading/error flags, loaded labels and viewport offsets. View renders a `tea.Vie
 with `AltScreen` enabled; it performs no I/O. Value receivers return the updated
 model explicitly. The list retains IDs and titles. Enter opens a conversation
 and a command loads
-its latest 20 messages; Esc cancels the read, discards the page, and returns to
+its latest 20 messages; `o` requests older pages through a typed cursor. Esc
+cancels the read, discards the buffer, and returns to
 the preserved list selection.
 
 Each screen allows only one load at a time, including manual refresh. A monotonic
@@ -226,11 +228,11 @@ Lip Gloss supplies presentation styles; `x/ansi` supplies display-cell-aware
 truncation and `x/term` checks terminal capabilities. Source labels and message
 bodies are escaped
 before applying trusted styles. Conversation bodies wrap using `x/ansi`, with
-scrolling over the loaded page and initial position at its bottom. The viewport
+scrolling over the retained history and initial position at its bottom. The viewport
 and rendered dimensions are bounded;
 small terminals show a resize prompt. No pointer to the model is shared with I/O
 workers. There is no automatic polling, reader held for the whole UI session,
-message sending, older-page loading, or Sessions connection in this checkpoint.
+message sending or Sessions connection in this checkpoint.
 
 Tests use synthetic chats for state transitions, navigation, viewport bounds,
 refresh/selection retention, safe errors and escaping. A headless program test
@@ -273,3 +275,18 @@ failing the history page. Byte lengths describe the archive; rune counts enforce
 the existing 4,000-character display limit after decoding. Neither UI nor CLI
 needs a separate decoder because both consume the same domain message text.
 See [the format contract and synthetic fixture setup](sqlite.md#attributed-body-text-extraction).
+
+
+Older-history commands snapshot the cursor and pass an explicit page limit to the
+CLI reader. `history.go` merges slices of domain messages, deduplicates by local
+row ID, and sorts by timestamp with numeric row-ID ties; unknown timestamps stay
+last. It anchors the viewport by message ID plus the line within that message,
+so prepending or moving unknown-time rows does not jump the reader's position.
+A read that fails leaves both messages and cursor intact for `o` to retry.
+
+The buffer retains at most 200 messages; each command requests the smaller of
+20 or the remaining capacity. At capacity `o` stops, with a visible notice;
+`r` replaces the buffer with the latest page. The UI does not evict messages or
+automatically fetch when scrolling. End-of-history follows the returned nil
+cursor, including an empty older page after local deletions. Pages are separate
+read snapshots, so already loaded messages are not a live view of later edits.

@@ -20,8 +20,7 @@ Available now: Cobra CLI commands, read-only conversation listing and recent pla
 message history, a Bubble Tea chat and conversation interface, optional local contact names, privacy-preserving
 file-access and SQLite schema diagnostics, a local HTTP server with a liveness endpoint, graceful shutdown, development
 PostgreSQL setup, tests, and CI. The server does not connect to PostgreSQL yet.
-Rich formatting, authentication, room APIs, WebSockets,
-and older-page loading inside the TUI are not implemented.
+Rich formatting, authentication, room APIs, and WebSockets are not implemented.
 
 ## Quick start
 
@@ -78,7 +77,8 @@ conversation alone. Color follows the terminal capabilities and `NO_COLOR`.
 | Home / End or `g` / `G` | First / last loaded chat or message line |
 | Page Up / Page Down | Move one visible page |
 | Enter | Open selected conversation at the latest messages |
-| `r` | Refresh the current screen |
+| `o` | Load an older message page |
+| `r` | Refresh chats / return to the latest message page |
 | Esc | Return to chats; quit from the chat list |
 | `q`, Ctrl-C | Quit |
 
@@ -88,17 +88,23 @@ load. Refresh is manual; repeated refresh keys do not queue extra reads. On a
 refresh failure, previous results remain visible. Quit cancels and joins active
 reads before the UI entry point returns, and Bubble Tea restores the terminal.
 Titles and message content are escaped before styling; message text wraps to the
-available display width. Returning to the list discards the loaded message page.
+available display width. Returning to the list discards the loaded message buffer.
 The UI writes no transcript to disk and performs no message sending or network upload.
 
-Conversations show up to 20 recent messages in chronological order, with local
+Conversations open with up to 20 recent messages in chronological order, with local
 times such as “Today at 9:37 PM,” “Yesterday at 4:30 PM,” or “Oct 18 at 2:15 PM.”
 Older years include the year. The view includes optional contact names (falling
 back to sender identifiers) and placeholders for attachments or unsupported rich
 content.
-Unknown times follow known times. Scroll within this page using the keys above;
-older-page loading is a later increment. Use `personal read <chat ID>` and its
-`--before` cursor for older history today. Plain CLI commands
+Unknown times follow known times. Press `o` for up to 20 older messages at a time;
+the visible message and line stay in place as history is merged. Scroll up to
+read the added messages. Only one page loads at a time; failures keep the current
+messages and cursor, and `o` retries. The UI shows when local history ends.
+
+The buffer stops at 200 messages, with a visible limit notice. It does not evict
+loaded messages. Press `r` to replace the buffer with the latest page, or use
+`personal read <chat ID>` and its `--before` cursor to browse beyond the UI limit.
+Plain CLI commands
 continue to work without an interactive terminal. The UI itself does not request
 Contacts access; use the explicit authorization command below when needed.
 

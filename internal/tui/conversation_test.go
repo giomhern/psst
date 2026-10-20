@@ -17,7 +17,7 @@ func TestConversationOpensSelectedChatAndRejectsLateResults(t *testing.T) {
 	var chosen string
 	canceled := 0
 	loads := 0
-	m := newModel(nil, func(id string, request uint64) (tea.Cmd, context.CancelFunc) {
+	m := newModel(nil, func(id string, request uint64, _ int, _ *domain.MessageCursor) (tea.Cmd, context.CancelFunc) {
 		chosen = id
 		return func() tea.Msg {
 			loads++
@@ -63,7 +63,7 @@ func TestConversationOpensSelectedChatAndRejectsLateResults(t *testing.T) {
 }
 
 func TestConversationScrollResizeAndSafeRefresh(t *testing.T) {
-	m := newModel(nil, func(_ string, request uint64) (tea.Cmd, context.CancelFunc) {
+	m := newModel(nil, func(_ string, request uint64, _ int, _ *domain.MessageCursor) (tea.Cmd, context.CancelFunc) {
 		return func() tea.Msg { return messagesLoaded{request: request, err: errors.New("PRIVATE driver contents")} }, func() {}
 	})
 	m, _ = update(m, chatsLoaded{chats: syntheticChats(1)})
@@ -126,7 +126,7 @@ func TestConversationEmptyFailureAndEscaping(t *testing.T) {
 		{"text", messagesLoaded{page: domain.MessagePage{Messages: []domain.Message{{Sender: "bad\x1b[2J", Text: "hello\n\x1b]0;PRIVATE\a"}}}}, `hello\n\x1b]0;PRIVATE\a`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := newModel(nil, func(string, uint64) (tea.Cmd, context.CancelFunc) { return nil, func() {} })
+			m := newModel(nil, func(string, uint64, int, *domain.MessageCursor) (tea.Cmd, context.CancelFunc) { return nil, func() {} })
 			m, _ = update(m, chatsLoaded{chats: syntheticChats(1)})
 			m, _ = update(m, key(tea.KeyEnter, ""))
 			tc.result.request = m.request
@@ -272,7 +272,7 @@ func TestMessageTimeUsesLocalCalendarDates(t *testing.T) {
 func TestChatRefreshFinishingInConversationKeepsListSelectionValid(t *testing.T) {
 	for _, count := range []int{0, 1, 2} {
 		t.Run(fmt.Sprintf("remaining_%d", count), func(t *testing.T) {
-			m := newModel(func() tea.Msg { return chatsLoaded{chats: syntheticChats(count)} }, func(string, uint64) (tea.Cmd, context.CancelFunc) { return nil, func() {} })
+			m := newModel(func() tea.Msg { return chatsLoaded{chats: syntheticChats(count)} }, func(string, uint64, int, *domain.MessageCursor) (tea.Cmd, context.CancelFunc) { return nil, func() {} })
 			m, _ = update(m, chatsLoaded{chats: syntheticChats(3)})
 			m, _ = update(m, key(tea.KeyEnd, ""))
 			m, refresh := update(m, key('r', "r"))
