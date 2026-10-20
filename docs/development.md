@@ -7,7 +7,8 @@ argument parsing, wiring, and exit handling. Shared application code lives under
 `internal/`, which Go prevents unrelated external modules from importing.
 
 The foundation implements `internal/cli`, `internal/domain`, `internal/personal`
-(including `sqlite`), `internal/server`, and `internal/sessions/httpapi`. Add these planned packages with their first behavior:
+(including `sqlite` and `contacts`), `internal/tui`, `internal/server`, and
+`internal/sessions/httpapi`. Add these planned packages with their first behavior:
 
 | Planned location | Responsibility |
 | --- | --- |
@@ -17,7 +18,6 @@ The foundation implements `internal/cli`, `internal/domain`, `internal/personal`
 | `internal/sessions/store` | PostgreSQL transactions and queries |
 | `internal/sessions/realtime` | Connection lifecycle and ordered log dispatch |
 | `internal/sessions/cleanup` | Expiration notifications and retention purges |
-| `internal/tui` | Bubble Tea model, commands, and update loop |
 | `internal/config` | Validated configuration once settings need a shared owner |
 
 Dependencies flow from entry points and adapters toward application rules. Avoid
@@ -45,8 +45,11 @@ Bounded conversation listing now runs through a small CLI-owned reader interface
 and Cobra commands, backed by the adapter and synthetic fixtures. A first
 `personal read <chat>` now supports bounded keyset pages with tested date
 conversion, safe plain-text output, and an explicit unknown-time ordering.
-`--before` continues from the token printed by the previous page. Rich-body
-support remains a separate future slice.
+`--before` continues from the token printed by the previous page. The first Bubble
+Tea chat list now launches with `personal ui`. Next, connect
+chat selection to a conversation view and then scrolling to older history.
+Per maintainer preference, Personal UI work precedes the persisted Sessions slice.
+Rich-body support remains a separate future slice.
 Build session persistence before delivery acknowledgements, using real PostgreSQL integration
 tests for transaction and locking behavior. Add dependencies and migrations only
 when the corresponding slice needs them.
@@ -129,7 +132,7 @@ Cobra's error and usage printing are silenced so `main` reports failures once.
 
 See [Cobra's user guide](https://github.com/spf13/cobra/blob/main/site/content/user_guide.md)
 for command and flag APIs. We use Cobra for the client; the server's existing
-single `-addr` flag still uses the standard library. Bubble Tea is not added yet.
+single `-addr` flag still uses the standard library. Bubble Tea v2 now provides the first Personal chat-list screen.
 
 ## Contact-name resolution
 
@@ -185,3 +188,43 @@ SQL adapters receive typed values and parameterize their key comparisons. Tokens
 have a version and strict length/field/value validation. The first-page
 `ListMessages` convenience delegates to the same paginated implementation, so
 ordering, read-only guards, and error handling do not diverge.
+
+## Bubble Tea chat-list concepts
+
+`internal/tui` depends on domain conversation values and an injected `LoadChats`
+function, not SQLite or macOS code. Cobra validates `personal ui --limit` and
+supplies a loader that opens, lists and closes a Personal reader for each request.
+Production startup requires TTY input/output before starting any Personal access.
+
+Bubble Tea's model satisfies its interface with `Init`, `Update`, and `View`:
+Init returns a `tea.Cmd` function; the framework executes that work separately and
+sends its `chatsLoaded` result back as a message. Update alone changes selection,
+loading/error flags, loaded labels and viewport offsets. View renders a `tea.View`
+with `AltScreen` enabled; it performs no I/O. Value receivers return the updated
+model explicitly. Model state retains only IDs and titles needed by the screen.
+
+The model allows only one load at a time, including manual refresh. The runner
+captures an operation context in the command closure instead of storing request
+contexts in model structs. Each read gets eight seconds; the existing optional
+Contacts lookup retains its five-second child budget. On exit the runner cancels
+its context and waits for active callbacks. A mutex closes the admission gate
+before `WaitGroup.Wait`, preventing a late framework command from adding work
+while shutdown waits. The CLI loader closes its reader before returning, so this
+join includes connection cleanup. Callback implementations must honor context.
+
+Lip Gloss supplies presentation styles; `x/ansi` supplies display-cell-aware
+truncation and `x/term` checks terminal capabilities. Source labels are escaped
+before applying trusted styles. The viewport and rendered dimensions are bounded;
+small terminals show a resize prompt. No pointer to the model is shared with I/O
+workers. There is no automatic polling, reader held for the whole UI session,
+message sending, or Sessions connection in this checkpoint.
+
+Tests use synthetic chats for state transitions, navigation, viewport bounds,
+refresh/selection retention, safe errors and escaping. A headless program test
+runs the actual event loop. Loader cancellation tests exercise blocked cleanup
+and admission after shutdown; Cobra tests verify help/invalid arguments do not
+launch the UI or open Personal files. Manual pseudo-terminal validation also uses
+only synthetic chats, including Unicode titles.
+
+References: [Bubble Tea v2](https://github.com/charmbracelet/bubbletea),
+[v2 declarative views](https://github.com/charmbracelet/bubbletea/blob/main/UPGRADE_GUIDE_V2.md).

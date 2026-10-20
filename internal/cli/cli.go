@@ -4,9 +4,11 @@ package cli
 import (
 	"context"
 	"io"
+	"os"
 
 	"github.com/giomhern/psst/internal/domain"
 	"github.com/giomhern/psst/internal/personal"
+	"github.com/giomhern/psst/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +25,7 @@ type messageReader interface {
 }
 
 type dependencies struct {
+	launchUI         func(context.Context, io.Writer, func(context.Context) ([]domain.Conversation, error)) error
 	checkDatabase    func(context.Context) personal.DatabaseCheck
 	openMessages     func(context.Context) (messageReader, error)
 	openReader       func(context.Context) (conversationReader, error)
@@ -34,7 +37,10 @@ type dependencies struct {
 // doctor and personal chats acquire their dependencies only when selected.
 func Run(ctx context.Context, args []string, out io.Writer) error {
 	return execute(ctx, args, out, dependencies{
-		checkDatabase:    personal.CheckDatabase,
+		checkDatabase: personal.CheckDatabase,
+		launchUI: func(ctx context.Context, out io.Writer, load func(context.Context) ([]domain.Conversation, error)) error {
+			return tui.Run(ctx, os.Stdin, out, load)
+		},
 		openMessages:     func(ctx context.Context) (messageReader, error) { return personal.Open(ctx) },
 		contactsAccess:   personal.ContactsAccess,
 		diagnoseContacts: personal.DiagnoseContacts,
@@ -46,7 +52,7 @@ func execute(ctx context.Context, args []string, out io.Writer, deps dependencie
 	root := &cobra.Command{
 		Use:               "psst",
 		Short:             "Terminal-native Personal and Sessions messaging",
-		Long:              "Psst provides read-only Personal diagnostics and chat listing. Recent plain-text history is available; hosted Sessions and the interactive TUI are under development.",
+		Long:              "Psst provides read-only Personal diagnostics and chat listing. Recent plain-text history is available; the Personal chat-list UI is available, and hosted Sessions are under development.",
 		Args:              cobra.NoArgs,
 		SilenceErrors:     true,
 		SilenceUsage:      true,

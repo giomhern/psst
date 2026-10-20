@@ -229,6 +229,14 @@ The first release authenticates CLI upgrades with the Authorization header. Befo
 
 ## 10. Implementation plan and acceptance criteria
 
+**Implementation ordering update:** At the maintainer's request, the Personal
+Bubble Tea interface is being built after read-only history/pagination and before
+the persisted Sessions slice. The first UI checkpoint is a bounded chat list;
+conversation viewing and history scrolling follow. This changes delivery order,
+not Personal/Sessions separation or the Sessions correctness contracts below.
+The standalone Personal UI initially launches with `psst personal ui`; the default
+`psst` command continues to show help until broader navigation is ready.
+
 | Phase | Deliverable | Acceptance test |
 |---|---|---|
 | 0 — Foundation | Go module, config, Docker Compose, CI, `psst doctor` | Local checks reveal no private message content |

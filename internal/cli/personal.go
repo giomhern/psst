@@ -39,17 +39,21 @@ func newPersonalCommand(deps dependencies) *cobra.Command {
 		},
 	}
 	chats.Flags().IntVar(&limit, "limit", 10, "Maximum chats to show (1–100)")
-	parent.AddCommand(chats, newReadCommand(deps.openMessages), newContactsCommand(deps))
+	parent.AddCommand(chats, newUICommand(deps), newReadCommand(deps.openMessages), newContactsCommand(deps))
 	return parent
 }
 
-func listChats(ctx context.Context, out io.Writer, openReader func(context.Context) (conversationReader, error), limit int) (err error) {
+func loadChats(ctx context.Context, openReader func(context.Context) (conversationReader, error), limit int) (chats []domain.Conversation, err error) {
 	reader, err := openReader(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { err = errors.Join(err, reader.Close()) }()
-	conversations, err := reader.ListConversations(ctx, limit)
+	return reader.ListConversations(ctx, limit)
+}
+
+func listChats(ctx context.Context, out io.Writer, openReader func(context.Context) (conversationReader, error), limit int) error {
+	conversations, err := loadChats(ctx, openReader, limit)
 	if err != nil {
 		return err
 	}

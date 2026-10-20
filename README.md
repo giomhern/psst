@@ -17,16 +17,16 @@ Hosted Sessions are not end-to-end encrypted in the initial design.
 This is an early client with read-only Personal browsing and a Sessions server scaffold.
 
 Available now: Cobra CLI commands, read-only conversation listing and recent plain-text
-message history, optional local contact names, privacy-preserving
+message history, a Bubble Tea chat-list interface, optional local contact names, privacy-preserving
 file-access and SQLite schema diagnostics, a local HTTP server with a liveness endpoint, graceful shutdown, development
 PostgreSQL setup, tests, and CI. The server does not connect to PostgreSQL yet.
 Rich message decoding, authentication, room APIs, WebSockets,
-and the TUI are not implemented.
+and conversation viewing inside the TUI are not implemented.
 
 ## Quick start
 
 Install Go **1.27.2 or newer**. Docker with Compose is optional until database work
-begins. Personal will require macOS; the Sessions server targets Linux and macOS.
+begins. Personal requires macOS; the Sessions server targets Linux and macOS.
 The CLI uses Cobra and the Personal adapter uses the pinned pure-Go
 `modernc.org/sqlite` driver; no C compiler is required for ordinary builds. Dependencies download on first use.
 
@@ -54,6 +54,39 @@ Stop with Ctrl-C. Change the listening address with `-addr 127.0.0.1:9090`.
 The default listener is loopback HTTP for local development. A production deployment
 will require HTTPS/WSS and the authentication/lifecycle controls in the architecture.
 `/healthz` indicates process liveness only, not database readiness.
+
+## Interactive Personal chat list
+
+```sh
+go run ./cmd/psst personal ui
+go run ./cmd/psst personal ui --limit 100
+```
+
+This first Bubble Tea screen lists recent chats, with optional contact names,
+in an alternate terminal screen. It loads at most 50 chats by default; `--limit`
+accepts 1–100. Use an interactive terminal for both input and output.
+
+| Key | Action |
+| --- | --- |
+| Up / Down or `k` / `j` | Move selection |
+| Home / End or `g` / `G` | First / last loaded chat |
+| Page Up / Page Down | Move one visible page |
+| `r` | Refresh the list |
+| `q`, Esc, Ctrl-C | Quit |
+
+The selection follows its chat ID across refreshes. Reads run outside the UI
+update loop, have an eight-second deadline, and close their reader after each
+load. Refresh is manual; repeated refresh keys do not queue extra reads. On a
+refresh failure, previous results remain visible. Quit cancels and joins active
+reads before the UI entry point returns, and Bubble Tea restores the terminal.
+Titles are escaped before styling and clipped to the available display width.
+There is no UI transcript cache, message sending or network upload.
+
+This checkpoint is the chat list only: Enter does not open a conversation yet.
+Use `personal read <chat ID>` for history until the next UI checkpoint adds the
+conversation view and later connects scrolling to pagination. Plain CLI commands
+continue to work without an interactive terminal. The UI itself does not request
+Contacts access; use the explicit authorization command below when needed.
 
 ## Browse Personal chats
 
@@ -236,9 +269,10 @@ implementations. See the [development guide](docs/development.md) for planned pa
 
 1. Foundation and privacy-preserving `doctor` probes.
 2. Read-only Personal queries against synthetic SQLite fixtures.
-3. A persisted Sessions slice: credentials, invites, transactional sends, ordered
-   fanout, and reconnect catch-up.
-4. Moderation, cleanup, failure testing, and the unified Bubble Tea interface.
+3. Personal Bubble Tea interface: chat list first, then conversation viewing and
+   history scrolling; keep its state local and disposable.
+4. A persisted Sessions slice: credentials, invites, transactional sends, ordered
+   fanout, reconnect catch-up, moderation and cleanup; then unified navigation.
 5. Explicit Personal sends, browser guests, and measured scaling work.
 
 The [architecture and protocol](architecture-design-v0.1.md) define the complete
