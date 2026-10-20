@@ -66,9 +66,9 @@ The Bubble Tea interface lists recent chats, with optional contact names,
 in an alternate terminal screen. It loads at most 50 chats by default; `--limit`
 accepts 1–100. Use an interactive terminal for both input and output.
 
-The conversation view uses blue outgoing bubbles on the right and gray incoming
-bubbles on the left, with local contact names above incoming messages. The header
-keeps the resolved chat title. At 96 columns or wider, a chat sidebar remains
+The conversation view uses blue outlined outgoing bubbles on the right and gray
+outlined incoming bubbles on the left, with no background fill. Local contact
+names appear above incoming messages, and the header keeps the resolved chat title. At 96 columns or wider, a chat sidebar remains
 visible; use Esc to return to chat selection. Narrower terminals show the
 conversation alone. Color follows the terminal capabilities and `NO_COLOR`.
 
@@ -91,8 +91,11 @@ Titles and message content are escaped before styling; message text wraps to the
 available display width. Returning to the list discards the loaded message page.
 The UI writes no transcript to disk and performs no message sending or network upload.
 
-Conversations show up to 20 recent messages in chronological order (UTC), with
-optional contact names (falling back to sender identifiers) and placeholders for attachments or unsupported rich content.
+Conversations show up to 20 recent messages in chronological order, with local
+times such as “Today at 9:37 PM,” “Yesterday at 4:30 PM,” or “Oct 18 at 2:15 PM.”
+Older years include the year. The view includes optional contact names (falling
+back to sender identifiers) and placeholders for attachments or unsupported rich
+content.
 Unknown times follow known times. Scroll within this page using the keys above;
 older-page loading is a later increment. Use `personal read <chat ID>` and its
 `--before` cursor for older history today. Plain CLI commands

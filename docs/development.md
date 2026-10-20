@@ -251,7 +251,14 @@ while their individual senders resolve independently.
 The Messages-inspired layout stays entirely in `internal/tui`. `messageLines`
 wraps escaped text into bounded bubbles, then aligns outgoing messages to the
 right using display-cell widths. Lip Gloss supplies rounded borders and blue/gray
-styles. `contentWidth` reserves 26 columns plus a divider for the sidebar when
+outlines without background fill. `contentWidth` reserves 26 columns plus a divider for the sidebar when
 the terminal is at least 96 columns wide; resizing reflows messages and clamps
 the scroll position. The sidebar is context only: Esc returns to chat selection.
 These rendering methods perform no I/O and introduce no additional workers.
+
+The TUI formats timestamps in the local timezone while CLI history retains UTC.
+`formatMessageTime` is a pure function: it receives both the stored instant and
+the current time, making date boundaries and daylight saving behavior testable.
+The model receives `time.Now` as a clock function; each render samples it once.
+Today/yesterday use calendar dates rather than a 24-hour duration. Older messages
+show month/day and include the year when it differs from the current local year.

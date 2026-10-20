@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -30,6 +31,7 @@ type chatItem struct{ id, title string }
 
 type model struct {
 	load                                 tea.Cmd
+	now                                  func() time.Time
 	open                                 openConversation
 	cancel                               context.CancelFunc
 	conversation                         *chatItem
@@ -44,7 +46,7 @@ type model struct {
 }
 
 func newModel(load tea.Cmd, open openConversation) model {
-	return model{load: load, open: open, width: 80, height: 24, loading: true}
+	return model{load: load, open: open, now: time.Now, width: 80, height: 24, loading: true}
 }
 
 func (m model) Init() tea.Cmd { return m.load }

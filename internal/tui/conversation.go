@@ -78,6 +78,7 @@ func (m model) clampMessages() model {
 // commands or inject layout. Only the bounded recent page lives in model state.
 func (m model) messageLines() []string {
 	var lines []string
+	now := m.now()
 	for _, message := range m.messages {
 		sender := message.Sender
 		if message.FromMe {
@@ -87,20 +88,16 @@ func (m model) messageLines() []string {
 		} else if sender == "" {
 			sender = "[unknown sender]"
 		}
-		timestamp := "[unknown time]"
-		if !message.SentAt.IsZero() {
-			timestamp = message.SentAt.UTC().Format(time.RFC3339)
-		}
+		timestamp := formatMessageTime(message.SentAt, now)
 		metadata := ansi.Truncate(displayText(sender)+" · "+timestamp, m.contentWidth(), "…")
 		metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#98989D")).Render(metadata)
 		bodyWidth := max(1, min(56, m.contentWidth()*3/4-4))
 		body := ansi.Wrap(displayText(messageText(message)), bodyWidth, "")
-		color := "#303034"
+		color := "#737378"
 		if message.FromMe {
 			color = "#0A84FF"
 		}
 		bubble := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color(color)).
 			Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(color)).
 			Padding(0, 1).Render(body)
 		lines = append(lines, alignMessage(metadata, m.contentWidth(), message.FromMe))
@@ -242,4 +239,25 @@ func (m model) sidebarLines() []string {
 		lines = append(lines, "")
 	}
 	return append(lines, muted.Render(strings.Repeat("─", sidebarWidth)), muted.Render("Esc to choose a chat"), muted.Render("Psst · Personal"))
+}
+
+// Calendar comparisons use local dates, not elapsed hours: a day can be 23 or
+// 25 hours around daylight saving changes. The stored timestamp remains UTC.
+func formatMessageTime(sentAt, now time.Time) string {
+	if sentAt.IsZero() {
+		return "[unknown time]"
+	}
+	local := sentAt.In(now.Location())
+	day := local.Format("2006-01-02")
+	clock := local.Format("3:04 PM")
+	switch {
+	case day == now.Format("2006-01-02"):
+		return "Today at " + clock
+	case day == now.AddDate(0, 0, -1).Format("2006-01-02"):
+		return "Yesterday at " + clock
+	case local.Year() == now.Year():
+		return local.Format("Jan 2") + " at " + clock
+	default:
+		return local.Format("Jan 2, 2006") + " at " + clock
+	}
 }

@@ -156,9 +156,10 @@ func TestMessagePresentation(t *testing.T) {
 		}
 	}
 	m := newModel(nil, nil)
+	m.now = func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
 	m.messages = []domain.Message{{FromMe: true, Sender: "unused", SentAt: time.Date(2026, 1, 1, 12, 0, 0, 0, time.FixedZone("offset", 3600)), Text: "hello"}, {Text: "hi"}, {Sender: "alex@example.test", SenderName: "Alex", Text: "hello"}}
 	lines := strings.Join(m.messageLines(), "\n")
-	for _, want := range []string{"Me · 2026-01-01T11:00:00Z", "[unknown sender] · [unknown time]", "Alex · [unknown time]"} {
+	for _, want := range []string{"Me · Yesterday at 11:00 AM", "[unknown sender] · [unknown time]", "Alex · [unknown time]"} {
 		if !strings.Contains(lines, want) {
 			t.Fatalf("missing %q", want)
 		}
@@ -230,5 +231,39 @@ func TestBubbleWrappingRetainsEscapedUnicodeContent(t *testing.T) {
 		if ansi.StringWidth(line) > m.contentWidth() {
 			t.Fatal("bubble exceeded available width")
 		}
+	}
+}
+
+func TestMessageTimeUsesLocalCalendarDates(t *testing.T) {
+	location, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 3, 9, 0, 15, 0, 0, location)
+	for _, tc := range []struct {
+		name   string
+		sentAt time.Time
+		want   string
+	}{
+		{"unknown", time.Time{}, "[unknown time]"},
+		{"local midnight", time.Date(2026, 3, 9, 7, 0, 59, 0, time.UTC), "Today at 12:00 AM"},
+		{"UTC date differs", time.Date(2026, 3, 9, 6, 45, 0, 0, time.UTC), "Yesterday at 11:45 PM"},
+		{"yesterday across DST", time.Date(2026, 3, 8, 0, 0, 0, 0, location), "Yesterday at 12:00 AM"},
+		{"older this year", time.Date(2026, 2, 18, 12, 30, 0, 0, location), "Feb 18 at 12:30 PM"},
+		{"previous year", time.Date(2025, 12, 18, 17, 5, 0, 0, location), "Dec 18, 2025 at 5:05 PM"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatMessageTime(tc.sentAt, now); got != tc.want {
+				t.Fatalf("got %q; want %q", got, tc.want)
+			}
+		})
+	}
+	newYear := time.Date(2026, 1, 1, 1, 0, 0, 0, location)
+	if got := formatMessageTime(time.Date(2025, 12, 31, 21, 0, 0, 0, location), newYear); got != "Yesterday at 9:00 PM" {
+		t.Fatalf("year boundary: %q", got)
+	}
+	fall := time.Date(2026, 11, 2, 0, 15, 0, 0, location)
+	if got := formatMessageTime(time.Date(2026, 11, 1, 0, 0, 0, 0, location), fall); got != "Yesterday at 12:00 AM" {
+		t.Fatalf("25-hour day: %q", got)
 	}
 }
