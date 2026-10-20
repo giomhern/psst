@@ -11,7 +11,17 @@ import (
 	"github.com/giomhern/psst/internal/domain"
 )
 
-func (m model) contentWidth() int { return max(1, min(m.width-4, 88)) }
+const sidebarWidth = 26
+
+func (m model) hasSidebar() bool { return m.conversation != nil && m.width >= 96 }
+
+func (m model) contentWidth() int {
+	width := m.width - 4
+	if m.hasSidebar() {
+		width -= sidebarWidth + 3
+	}
+	return max(1, min(width, 88))
+}
 
 func (m model) startHistory() (tea.Model, tea.Cmd) {
 	m.request++
@@ -81,10 +91,22 @@ func (m model) messageLines() []string {
 		if !message.SentAt.IsZero() {
 			timestamp = message.SentAt.UTC().Format(time.RFC3339)
 		}
-		header := displayText(sender) + " · " + timestamp
-		lines = append(lines, strings.Split(ansi.Wrap(header, m.contentWidth(), ""), "\n")...)
-		body := displayText(messageText(message))
-		lines = append(lines, strings.Split(ansi.Wrap(body, m.contentWidth(), ""), "\n")...)
+		metadata := ansi.Truncate(displayText(sender)+" · "+timestamp, m.contentWidth(), "…")
+		metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#98989D")).Render(metadata)
+		bodyWidth := max(1, min(56, m.contentWidth()*3/4-4))
+		body := ansi.Wrap(displayText(messageText(message)), bodyWidth, "")
+		color := "#303034"
+		if message.FromMe {
+			color = "#0A84FF"
+		}
+		bubble := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color(color)).
+			Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(color)).
+			Padding(0, 1).Render(body)
+		lines = append(lines, alignMessage(metadata, m.contentWidth(), message.FromMe))
+		for _, line := range strings.Split(bubble, "\n") {
+			lines = append(lines, alignMessage(line, m.contentWidth(), message.FromMe))
+		}
 		lines = append(lines, "")
 	}
 	return lines
@@ -117,15 +139,15 @@ func messageText(message domain.Message) string {
 
 func (m model) conversationView() string {
 	width := m.contentWidth()
-	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("#8BE9D0")).Bold(true)
+	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("#F5F5F7")).Bold(true)
 	muted := lipgloss.NewStyle().Foreground(lipgloss.Color("#969DAA"))
 	title := displayText(m.conversation.title)
 	if title == "" {
 		title = "[untitled chat]"
 	}
 	lines := []string{
-		accent.Render("Psst") + muted.Render("  /  Personal  /  ") + title,
-		muted.Render(fmt.Sprintf("Recent messages · %d loaded · UTC · read-only", len(m.messages))),
+		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(accent.Render("●  " + ansi.Truncate(title, width-3, "…"))),
+		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(muted.Render(ansi.Truncate(fmt.Sprintf("Personal · %d recent messages · Read-only", len(m.messages)), width, "…"))),
 		muted.Render(strings.Repeat("─", width)),
 	}
 	content := m.messageLines()
@@ -159,8 +181,65 @@ func (m model) conversationView() string {
 		lines = append(lines, "")
 	}
 	lines = append(lines, muted.Render(strings.Repeat("─", width)), muted.Render(status), muted.Render("↑↓/jk scroll · PgUp/PgDn page · Esc chats · q quit"))
-	for i, line := range lines {
-		lines[i] = "  " + ansi.Truncate(line, width, "…")
+	if m.hasSidebar() {
+		sidebar := m.sidebarLines()
+		divider := muted.Render(" │ ")
+		for i, line := range lines {
+			left := ansi.Truncate(sidebar[i], sidebarWidth, "…")
+			left += strings.Repeat(" ", max(0, sidebarWidth-ansi.StringWidth(left)))
+			lines[i] = "  " + left + divider + ansi.Truncate(line, width, "…")
+		}
+	} else {
+		for i, line := range lines {
+			lines[i] = "  " + ansi.Truncate(line, width, "…")
+		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func alignMessage(line string, width int, outgoing bool) string {
+	if outgoing {
+		return strings.Repeat(" ", max(0, width-ansi.StringWidth(line))) + line
+	}
+	return line
+}
+
+func (m model) sidebarLines() []string {
+	muted := lipgloss.NewStyle().Foreground(lipgloss.Color("#98989D"))
+	selected := lipgloss.NewStyle().Background(lipgloss.Color("#0A84FF")).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).Width(sidebarWidth)
+	lines := []string{
+		lipgloss.NewStyle().Bold(true).Render("Messages"),
+		muted.Render(fmt.Sprintf("Personal · %d chats", len(m.chats))),
+		muted.Render(strings.Repeat("─", sidebarWidth)),
+	}
+	// Keep the active chat visible independently of the list's previous viewport.
+	chosen := m.selected
+	for i, chat := range m.chats {
+		if chat.id == m.conversation.id {
+			chosen = i
+			break
+		}
+	}
+	offset := max(0, min(m.offset, max(0, len(m.chats)-m.visibleRows())))
+	if chosen < offset {
+		offset = chosen
+	}
+	if chosen >= offset+m.visibleRows() {
+		offset = chosen - m.visibleRows() + 1
+	}
+	for i := offset; i < min(len(m.chats), offset+m.visibleRows()); i++ {
+		title := displayText(m.chats[i].title)
+		if title == "" {
+			title = "[untitled chat]"
+		}
+		row := "  " + ansi.Truncate(title, sidebarWidth-2, "…")
+		if m.chats[i].id == m.conversation.id {
+			row = selected.Render(row)
+		}
+		lines = append(lines, row)
+	}
+	for len(lines) < 3+m.visibleRows() {
+		lines = append(lines, "")
+	}
+	return append(lines, muted.Render(strings.Repeat("─", sidebarWidth)), muted.Render("Esc to choose a chat"), muted.Render("Psst · Personal"))
 }

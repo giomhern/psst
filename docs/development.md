@@ -247,3 +247,11 @@ History pages now use the same optional Contacts lookup budget as chat titles.
 UI and CLI prefer that label while outgoing messages remain “Me.” Each page
 looks up only distinct incoming handles. Named groups keep their stored title
 while their individual senders resolve independently.
+
+The Messages-inspired layout stays entirely in `internal/tui`. `messageLines`
+wraps escaped text into bounded bubbles, then aligns outgoing messages to the
+right using display-cell widths. Lip Gloss supplies rounded borders and blue/gray
+styles. `contentWidth` reserves 26 columns plus a divider for the sidebar when
+the terminal is at least 96 columns wide; resizing reflows messages and clamps
+the scroll position. The sidebar is context only: Esc returns to chat selection.
+These rendering methods perform no I/O and introduce no additional workers.

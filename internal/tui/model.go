@@ -165,11 +165,11 @@ func (m model) View() tea.View {
 		view.SetContent(m.conversationView())
 		return view
 	}
-	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("#8BE9D0"))
+	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("#0A84FF"))
 	muted := lipgloss.NewStyle().Foreground(lipgloss.Color("#969DAA"))
-	selected := lipgloss.NewStyle().Foreground(lipgloss.Color("#8BE9D0")).Background(lipgloss.Color("#252B35")).Bold(true).Width(width)
+	selected := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#0A84FF")).Bold(true).Width(width)
 	lines := []string{
-		accent.Bold(true).Render("Psst") + muted.Render("  /  Personal"),
+		accent.Bold(true).Render("Messages") + muted.Render("  /  Personal"),
 		muted.Render(fmt.Sprintf("Recent chats · %d loaded · read-only", len(m.chats))),
 		muted.Render(strings.Repeat("─", width)),
 	}

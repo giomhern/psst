@@ -164,3 +164,71 @@ func TestMessagePresentation(t *testing.T) {
 		}
 	}
 }
+
+func TestMessagesLayoutAlignmentAndResponsiveSidebar(t *testing.T) {
+	m := newModel(nil, nil)
+	m.chats = []chatItem{{id: "1", title: "Alex"}, {id: "2", title: "Group"}}
+	m.conversation = &m.chats[0]
+	m.messages = []domain.Message{
+		{Sender: "alex@example.test", SenderName: "Alex", Text: "Incoming hello"},
+		{FromMe: true, Text: "Outgoing hello"},
+	}
+	lines := m.messageLines()
+	incoming, outgoing := false, false
+	for _, line := range lines {
+		plain := ansi.Strip(line)
+		if strings.Contains(plain, "Incoming hello") {
+			incoming = true
+			if strings.HasPrefix(plain, " ") {
+				t.Fatal("incoming bubble was not left aligned")
+			}
+		}
+		if strings.Contains(plain, "Outgoing hello") {
+			outgoing = true
+			if !strings.HasPrefix(plain, " ") || ansi.StringWidth(line) != m.contentWidth() {
+				t.Fatal("outgoing bubble was not right aligned")
+			}
+		}
+	}
+	if !incoming || !outgoing {
+		t.Fatal("missing bubble text")
+	}
+	if !strings.Contains(strings.Join(lines, "\n"), "Alex") || strings.Contains(strings.Join(lines, "\n"), "alex@example.test") {
+		t.Fatal("contact name did not propagate into bubbles")
+	}
+	for _, size := range []tea.WindowSizeMsg{{Width: 36, Height: 8}, {Width: 80, Height: 24}, {Width: 96, Height: 8}, {Width: 120, Height: 30}, {Width: 240, Height: 120}} {
+		m, _ = update(m, size)
+		view := ansi.Strip(m.View().Content)
+		if strings.Contains(view, "Esc to choose a chat") != (size.Width >= 96) {
+			t.Fatalf("incorrect sidebar at width %d", size.Width)
+		}
+		if len(strings.Split(view, "\n")) > size.Height {
+			t.Fatalf("layout exceeds height at %v", size)
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if ansi.StringWidth(line) > size.Width {
+				t.Fatalf("layout exceeds width at %v", size)
+			}
+		}
+		if !strings.Contains(strings.Split(view, "\n")[0], "Alex") {
+			t.Fatal("conversation header lost resolved title")
+		}
+	}
+}
+
+func TestBubbleWrappingRetainsEscapedUnicodeContent(t *testing.T) {
+	m := newModel(nil, nil)
+	m.width = 36
+	text := strings.Repeat("猫", 100) + "\x1b[2J\nend"
+	m.messages = []domain.Message{{FromMe: true, Text: text, SenderName: "ignored"}}
+	lines := m.messageLines()
+	joined := ansi.Strip(strings.Join(lines, "\n"))
+	if strings.Count(joined, "猫") != 100 || !strings.Contains(joined, `\x1b[2J\nend`) || strings.Contains(joined, "\x1b") {
+		t.Fatal("wrapping lost text or allowed terminal controls")
+	}
+	for _, line := range lines {
+		if ansi.StringWidth(line) > m.contentWidth() {
+			t.Fatal("bubble exceeded available width")
+		}
+	}
+}

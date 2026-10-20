@@ -66,6 +66,12 @@ The Bubble Tea interface lists recent chats, with optional contact names,
 in an alternate terminal screen. It loads at most 50 chats by default; `--limit`
 accepts 1–100. Use an interactive terminal for both input and output.
 
+The conversation view uses blue outgoing bubbles on the right and gray incoming
+bubbles on the left, with local contact names above incoming messages. The header
+keeps the resolved chat title. At 96 columns or wider, a chat sidebar remains
+visible; use Esc to return to chat selection. Narrower terminals show the
+conversation alone. Color follows the terminal capabilities and `NO_COLOR`.
+
 | Key | Action |
 | --- | --- |
 | Up / Down or `k` / `j` | Move selection / scroll messages |
