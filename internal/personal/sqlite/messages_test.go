@@ -193,3 +193,56 @@ func TestHistoryDatePolicyBoundaries(t *testing.T) {
 		}
 	}
 }
+
+func TestHistoryDecodesAttributedTextAndRetainsSafeFallbacks(t *testing.T) {
+	path, writer := fixture(t, "attributed-history.db", false)
+	if _, err := writer.Exec(`DELETE FROM message;
+  ALTER TABLE message ADD COLUMN attributedBody BLOB;
+  ALTER TABLE message ADD COLUMN cache_has_attachments INTEGER;
+  INSERT INTO chat(ROWID,guid) VALUES(1,'synthetic');`); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name                string
+		plain               any
+		body                []byte
+		want                string
+		truncated, embedded bool
+	}{
+		{name: "null plain", body: attributedFixture(t, "unicode"), want: "Hello synthetic 世界 🙂"},
+		{name: "empty plain", plain: "", body: attributedFixture(t, "mutable"), want: "Mutable synthetic message"},
+		{name: "plain takes precedence", plain: "Use plain", body: attributedFixture(t, "unicode"), want: "Use plain"},
+		{name: "malformed", body: []byte{1, 2, 3}},
+		{name: "oversized", body: append(attributedFixture(t, "unicode"), make([]byte, maxAttributedBodyBytes)...)},
+		{name: "truncated", body: attributedFixture(t, "unicode")[:80]},
+		{name: "invalid UTF8", body: attributedText(t, []byte{0xff}, 1)},
+		{name: "bounded decoded text", body: attributedText(t, []byte(strings.Repeat("猫", 4001)), 2), want: strings.Repeat("猫", 4000), truncated: true},
+		{name: "embedded content", body: attributedFixture(t, "styled"), want: "Styled synthetic caption  end", embedded: true},
+	}
+	for i, tc := range cases {
+		if _, err := writer.Exec("INSERT INTO message(ROWID,text,attributedBody,cache_has_attachments) VALUES(?,?,?,1); INSERT INTO chat_message_join VALUES(1,?)", i+1, tc.plain, tc.body, i+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err := openFixture(t, path).ListMessages(context.Background(), "1", 100)
+	if err != nil || len(messages) != len(cases) {
+		t.Fatalf("history failed: %v", err)
+	}
+	for i, tc := range cases {
+		message := messages[i]
+		if message.Text != tc.want || message.TextTruncated != tc.truncated || message.HasEmbeddedContent != tc.embedded || !message.HasRichContent || !message.HasAttachments {
+			t.Fatalf("%s: incorrect decoded text or metadata", tc.name)
+		}
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("decoding changed the source database")
+	}
+}

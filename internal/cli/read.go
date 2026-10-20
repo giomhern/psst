@@ -20,7 +20,7 @@ func newReadCommand(open func(context.Context) (messageReader, error)) *cobra.Co
 	cmd := &cobra.Command{
 		Use:   "read <chat>",
 		Short: "Read a recent page of local message history read-only",
-		Long:  "Read recent messages for a chat ID from personal chats. Use --before with the Next --before token to continue to older pages. Shows bounded plain text and optional local contact names in chronological order (UTC); unknown times follow. Attachments and rich bodies are not decoded. Output contains private message content. No sending or uploading occurs.",
+		Long:  "Read recent messages for a chat ID from personal chats. Use --before with the Next --before token to continue to older pages. Shows bounded plain text and optional local contact names in chronological order (UTC); unknown times follow. Supported attributed bodies yield plain text; formatting and attachments are not rendered. Output contains private message content. No sending or uploading occurs.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := domain.ValidateMessageQuery(args[0], limit); err != nil {

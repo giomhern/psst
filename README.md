@@ -20,7 +20,7 @@ Available now: Cobra CLI commands, read-only conversation listing and recent pla
 message history, a Bubble Tea chat and conversation interface, optional local contact names, privacy-preserving
 file-access and SQLite schema diagnostics, a local HTTP server with a liveness endpoint, graceful shutdown, development
 PostgreSQL setup, tests, and CI. The server does not connect to PostgreSQL yet.
-Rich message decoding, authentication, room APIs, WebSockets,
+Rich formatting, authentication, room APIs, WebSockets,
 and older-page loading inside the TUI are not implemented.
 
 ## Quick start
@@ -150,9 +150,10 @@ Missing chats produce a clear error; existing empty chats get an empty-history m
 This command explicitly prints private message text. It neither sends nor uploads
 anything. Sender labels and text are quoted to escape terminal controls.
 Text is capped at 4,000 Unicode code points per row with a visible truncation label.
-Attachments, rich bodies and embedded content use placeholders; attachment files
-are not opened and rich bodies are not decoded. Some modern messages will therefore
-show a placeholder instead of their text.
+When plain text is empty, supported `attributedBody` archives yield their backing
+text. Unsupported archives, attachments and embedded content keep placeholders;
+attachment files are not opened and rich formatting is not rendered. Some
+messages will therefore still show a placeholder instead of their text.
 
 When more history exists, output ends with `Next --before: <token>`. Copy that token
 into `--before` on the next invocation for the same chat. No token is printed at

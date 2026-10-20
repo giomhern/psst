@@ -159,13 +159,16 @@ this checkpoint does not validate date units against a real user's message rows.
 Plain text is selected only for SQLite TEXT values, capped in SQL at 4,001 code
 points so Go can retain 4,000 and indicate truncation. Sender identifiers are capped
 at 320 code points. Optional `cache_has_attachments` and `attributedBody` columns
-provide presence flags; rich body bytes are not returned. U+FFFC object markers
+provide presence flags. When plain text is empty, at most 64 KiB of a BLOB body
+is fetched for the bounded decoder described below. Larger bodies remain
+placeholders, without transferring them into Go. U+FFFC object markers
 set an embedded-content flag and are removed from display text. CLI placeholders
 make absent text, unrendered attachments/rich content and truncation explicit.
 Flags are best-effort metadata, not a complete classification of Apple's message
 types: reactions, edits, deletions, delivery state and attachment rendering are
 not decoded. The command renders the available database rows, not a reconstructed
-Messages transcript. Incoming sender names remain identifiers in this slice.
+Messages transcript. The Personal facade optionally resolves incoming sender
+names; this SQLite adapter returns identifiers.
 
 Tests cover mixed seconds/nanoseconds, precision and policy boundaries, chronological
 selection, tie-breaks, unknown dates, empty/missing chats, duplicate/orphan joins,
@@ -177,3 +180,48 @@ unknown-time segments and page sizes 1–100 without duplicates or omissions. Th
 also cover exact page boundaries, duplicate/orphan joins, newer WAL inserts,
 deleted boundary rows, end-of-history detection, cross-chat/invalid cursors,
 round-trip subsecond precision, and the CLI continuation flow.
+
+
+## Attributed-body text extraction
+
+`attributed_body.go` supports the common macOS v4, little-endian, system-version
+1000 typedstream prefix: an `NSAttributedString` or `NSMutableAttributedString`
+root with its first backing `NSString` or `NSMutableString` (string version 1).
+The parser checks class names, versions, expected references and the typed UTF-8
+string field. It reads direct, two-byte or four-byte unsigned byte lengths,
+checks the payload boundary and string end marker, and rejects invalid UTF-8.
+It never scans for printable text or guesses a string from formatting metadata.
+The layout reference is the upstream
+[typedstream reader](https://github.com/dgelessus/python-typedstream/blob/master/src/typedstream/stream.py)
+and its [NSString implementation](https://github.com/dgelessus/python-typedstream/blob/master/src/typedstream/types/foundation.py).
+This implementation follows the format; it does not import that library.
+
+Only the backing text field is decoded. The attribute graph after it is neither
+interpreted nor fully validated; text styles, app objects and additional object
+layouts are unsupported. Binary plists, big-endian streams, other versions,
+truncated string fields, invalid UTF-8 and archives larger than 64 KiB keep the
+rich-content placeholder. No archived objects are instantiated or executed.
+Nonempty plain text always wins; decoded text uses the same 4,000-code-point
+limit, truncation label, U+FFFC handling and terminal escaping as ordinary text.
+Decoding failures are local to the message and expose no raw archive in errors.
+
+The four `testdata/attributed-*.bin` files contain synthetic values produced by
+macOS Foundation, including Unicode, mutable strings, a multi-byte length and
+multiple attribute runs with decoy metadata. Ordinary Go tests use these files
+on every platform and require no Foundation, Contacts or Messages access.
+To regenerate them on macOS from the repository root:
+
+```sh
+fixture_tool=$(mktemp -d)
+xcrun clang -Wno-deprecated-declarations -framework Foundation \
+  internal/personal/sqlite/testdata/generate-attributed-body.m \
+  -o "$fixture_tool/generate"
+"$fixture_tool/generate"
+rm "$fixture_tool/generate"
+rmdir "$fixture_tool"
+```
+
+The generator only archives the hardcoded synthetic strings in its source. The
+production decoder is pure Go. `FuzzDecodeAttributedBody` exercises arbitrary
+bytes; integration tests cover precedence, malformed/oversized bodies, decoded
+Unicode truncation, embedded markers and unchanged source database bytes.

@@ -61,12 +61,17 @@ func (r *Reader) ListMessagePage(ctx context.Context, chatID string, limit int, 
 	if err != nil {
 		return domain.MessagePage{}, err
 	}
-	attachments, rich := "0", "0"
+	attachments, rich, body := "0", "0", "NULL"
 	if columns["cache_has_attachments"] {
 		attachments = "COALESCE(m.cache_has_attachments=1,0)"
 	}
 	if columns["attributedbody"] {
 		rich = "COALESCE(length(m.attributedBody)>0,0)"
+		// Bound the transfer in SQLite; an oversized archive stays a placeholder.
+		// Plain text wins without fetching or decoding its attributed counterpart.
+		body = `CASE WHEN typeof(m.attributedBody)='blob'
+   AND length(m.attributedBody) BETWEEN 1 AND ` + strconv.Itoa(maxAttributedBodyBytes) + `
+   AND (typeof(m.text)!='text' OR length(CAST(m.text AS BLOB))=0) THEN m.attributedBody END`
 	}
 	boundary := "1"
 	args := []any{chatID}
@@ -93,7 +98,7 @@ func (r *Reader) ListMessagePage(ctx context.Context, chatID string, limit int, 
     ) SELECT m.ROWID,r.sent_ns,COALESCE(m.is_from_me=1,0),
         CASE WHEN typeof(h.id)='text' THEN substr(trim(h.id),1,320) ELSE '' END,
         CASE WHEN typeof(m.text)='text' THEN substr(m.text,1,` + strconv.Itoa(domain.MaxMessageTextRunes+1) + `) END,
-        ` + attachments + `, ` + rich + `
+        ` + attachments + `, ` + rich + `, ` + body + `
       FROM recent r JOIN message m ON m.ROWID=r.id LEFT JOIN handle h ON h.ROWID=m.handle_id
       ORDER BY r.sent_ns IS NULL, r.sent_ns DESC, r.id DESC`
 	rows, err := tx.QueryContext(ctx, query, args...)
@@ -106,7 +111,8 @@ func (r *Reader) ListMessagePage(ctx context.Context, chatID string, limit int, 
 		var id int64
 		var sent sql.NullInt64
 		var text sql.NullString
-		if err := rows.Scan(&id, &sent, &message.FromMe, &message.Sender, &text, &message.HasAttachments, &message.HasRichContent); err != nil {
+		var body []byte
+		if err := rows.Scan(&id, &sent, &message.FromMe, &message.Sender, &text, &message.HasAttachments, &message.HasRichContent, &body); err != nil {
 			rows.Close()
 			return domain.MessagePage{}, fmt.Errorf("decode history: %w", err)
 		}
@@ -114,7 +120,13 @@ func (r *Reader) ListMessagePage(ctx context.Context, chatID string, limit int, 
 		if sent.Valid {
 			message.SentAt = time.Unix(appleEpochUnixSeconds+sent.Int64/1e9, sent.Int64%1e9).UTC()
 		}
-		runes := []rune(text.String)
+		content := text.String
+		if content == "" && len(body) > 0 {
+			if decoded, ok := decodeAttributedBody(body); ok {
+				content = decoded
+			}
+		}
+		runes := []rune(content)
 		if len(runes) > domain.MaxMessageTextRunes {
 			message.TextTruncated = true
 			runes = runes[:domain.MaxMessageTextRunes]

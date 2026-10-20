@@ -262,3 +262,14 @@ the current time, making date boundaries and daylight saving behavior testable.
 The model receives `time.Now` as a clock function; each render samples it once.
 Today/yesterday use calendar dates rather than a 24-hour duration. Older messages
 show month/day and include the year when it differs from the current local year.
+
+
+Attributed-body text uses a small parser inside the SQLite boundary. A `[]byte`
+is a slice of raw bytes, distinct from a UTF-8 Go string. `bodyReader` uses pointer
+receivers to advance its remaining slice, with bounds checked before every read.
+`decodeAttributedBody` returns `(string, bool)`: false means the supported text
+field could not be decoded, so the caller retains a placeholder rather than
+failing the history page. Byte lengths describe the archive; rune counts enforce
+the existing 4,000-character display limit after decoding. Neither UI nor CLI
+needs a separate decoder because both consume the same domain message text.
+See [the format contract and synthetic fixture setup](sqlite.md#attributed-body-text-extraction).
