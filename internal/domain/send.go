@@ -22,13 +22,36 @@ const (
 )
 
 // SendResult deliberately contains no body, recipient, or automation payload.
-type SendResult struct{ Status SendStatus }
+type SendResult struct {
+	Status  SendStatus
+	Receipt SendReceipt
+}
+
+// DeliveryStatus is evidence reported by the local database, not an independent
+// network acknowledgement. Missing fields and ambiguous matches stay unknown.
+type DeliveryStatus uint8
+
+const (
+	DeliveryUnknown DeliveryStatus = iota
+	DeliveryPending
+	DeliverySent
+	DeliveryDelivered
+	DeliveryFailed
+)
+
+// SendReceipt identifies a conservatively matched outgoing row. Never log GUIDs.
+// A GUID is absent when matching is ambiguous or observation is unavailable.
+type SendReceipt struct {
+	GUID   string
+	Status DeliveryStatus
+}
 
 // Safe errors distinguish user-actionable Personal send outcomes.
 var (
-	ErrSendUnavailable  = errors.New("could not request a Messages send")
-	ErrAutomationDenied = errors.New("automation permission for Messages was denied")
-	ErrSendUnknown      = errors.New("send outcome is unknown; check Messages before sending again")
+	ErrReceiptUnavailable = errors.New("message status unavailable")
+	ErrSendUnavailable    = errors.New("could not request a Messages send")
+	ErrAutomationDenied   = errors.New("automation permission for Messages was denied")
+	ErrSendUnknown        = errors.New("send outcome is unknown; check Messages before sending again")
 )
 
 // ValidateSendText rejects empty, oversized or invalid argv text without echoing it.

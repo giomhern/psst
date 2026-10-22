@@ -63,6 +63,7 @@ func (m model) updateConversation(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "esc":
+		m = m.stopReceipt()
 		if m.cancel != nil {
 			m.cancel()
 		}
@@ -78,6 +79,7 @@ func (m model) updateConversation(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		if m.send != nil && !m.historyLoading {
 			m = m.cancelLive()
+			m = m.stopReceipt()
 			m.composing = true
 			m.confirming = false
 			m.draft, m.draftError, m.sendNotice = "", "", ""
@@ -256,7 +258,7 @@ func (m model) conversationView() string {
 		}
 	}
 	if m.sending {
-		status = "Requesting send… · do not retry"
+		status = "Requesting send / checking local status… · do not retry"
 		footer = "Waiting for Messages · Ctrl+C quit"
 	}
 	for len(lines) < 3+m.visibleRows() {

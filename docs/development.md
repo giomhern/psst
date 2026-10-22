@@ -327,7 +327,7 @@ Enter freezes the draft for review; only Ctrl+S on that screen creates a send
 command. A pending send blocks other navigation or sends; Ctrl+C can still quit.
 The operation gate joins send callbacks as well as reads during shutdown.
 Quitting during a pending send can leave an unknown outcome; check Messages
-before sending again. No automatic resend or delivery inference is implemented.
+before sending again. No automatic resend or delivery inference from automation acceptance is implemented.
 
 A requested send clears its draft and triggers one recent-history read. A known
 unsent failure restores the draft for editing and a fresh confirmation. Unknown
@@ -396,3 +396,54 @@ No real Messages data is needed in tests or terminal previews.
 The minimum toolchain is Go 1.27.3, including the standard-library certificate
 verification update in [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809).
 CI selects the same patch version from `go.mod`.
+
+
+## Personal send receipts
+
+`domain.SendResult` keeps automation acceptance separate from `SendReceipt`.
+`DeliveryStatus` is a small typed enum: pending, sent, delivered, failed, or unknown
+local evidence. A database observation never changes whether automation was
+accepted and never authorizes another send.
+
+Before automation, the Personal adapter captures the global maximum message ROWID
+and resolves the exact selected chat GUID, then closes its reader. If checkpoint
+capture fails, the confirmed send can still proceed without tracking. After an
+accepted request, it reopens a read-only reader for six checks, 500 ms apart, with
+a five-second observation deadline under the existing overall send deadline. The
+small window allows bodies and join links to appear and competing identical rows
+to become visible. At most 100 new outgoing rows in the original chat are decoded;
+a 101st row or multiple matches makes observation unavailable. Matching requires
+exact plain or supported attributed text and a known timestamp between send-start
+minus two seconds and observation time plus two seconds. Two seconds is a clock
+and timestamp-granularity tolerance, not a delivery timeout. No match remains
+unconfirmed. GUID changes between observations also discard the association.
+
+This is deliberately a best-effort correlation, not proof of send causality:
+AppleScript exposes no message identifier. Identical sends from another device,
+late synchronization, backdated rows, unsupported rich-text encodings, database
+replacement, or changes after the short observation window can defeat matching.
+The checkpoint is an insertion filter, not an exact insertion timestamp. No schema
+changes, indexes, or writes are made to Apple's database. Message text stays only
+in the existing in-memory command for this bounded comparison; no receipt stores
+or logs it. GUIDs remain in memory and must not be logged.
+
+Once matched, the UI's optional `Source.Receipt` capability follows the GUID in
+its chat. All SQL values are bound; status columns are detected from a fixed
+allowlist on each read. A nonzero integer error means failed unless it contradicts
+delivery evidence; `is_sent=1` means sent; `is_delivered=1` or a supported positive
+`date_delivered` means delivered. Missing, null, malformed, or contradictory data
+is unknown. Pending requires usable `is_sent` and `error` fields with no sent/error
+evidence. No timestamp absence or timeout implies failure. Group status is not a
+per-recipient receipt. Private schema semantics may change with macOS.
+
+Receipt commands wait two seconds, then perform a read with a three-second limit,
+for at most 30 checks and within a one-minute deadline. A separate operation gate
+owns waiting and I/O so it cannot occupy the history/send gate, and shutdown
+cancels and joins both gates. Update owns receipt state, the deadline, a generation
+counter, and the cancellation function. Starting a new draft or leaving the chat
+cancels tracking and invalidates late results. Terminal delivered/failed evidence
+ends polling; tracking errors retain prior sent evidence without claiming failure.
+Only the current send footer is tracked; this is not persistent receipt history.
+Synthetic tests cover selection ambiguity, rich text, WAL-visible changes, schema
+fallback, contradictory evidence, finite polling, cancellation, and shutdown joins.
+No real Messages access or automated real send was used to validate this change.

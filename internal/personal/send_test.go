@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/giomhern/psst/internal/domain"
 )
@@ -54,5 +55,72 @@ func TestTargetFailurePreventsSend(t *testing.T) {
 		if err == nil {
 			t.Fatal("invalid ID accepted")
 		}
+	}
+}
+
+type fakeObserver struct {
+	fakeSendTarget
+	checkpointErr error
+	receipts      []domain.SendReceipt
+	matchErr      error
+	checks        int
+}
+
+func (r *fakeObserver) sendCheckpoint(context.Context) (int64, error) { return 10, r.checkpointErr }
+func (r *fakeObserver) matchSend(_ context.Context, id, guid, text string, after int64, started, ended time.Time) (domain.SendReceipt, error) {
+	if id != "7" || guid != "synthetic-chat" || text != "Synthetic" || after != 10 || ended.Before(started) {
+		return domain.SendReceipt{}, domain.ErrReceiptUnavailable
+	}
+	i := min(r.checks, len(r.receipts)-1)
+	r.checks++
+	if i < 0 {
+		return domain.SendReceipt{}, r.matchErr
+	}
+	return r.receipts[i], r.matchErr
+}
+
+func TestObservationWindowAndCompetingMatches(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		receipts []domain.SendReceipt
+		err      error
+		want     bool
+	}{
+		{name: "delayed unique", receipts: []domain.SendReceipt{{}, {GUID: "synthetic-message", Status: domain.DeliverySent}}, want: true},
+		{name: "none"},
+		{name: "ambiguous", err: errors.New("PRIVATE ambiguous database detail")},
+		{name: "competing GUIDs", receipts: []domain.SendReceipt{{GUID: "first"}, {GUID: "second"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := &fakeObserver{receipts: tc.receipts, matchErr: tc.err}
+			waits := 0
+			got := observeRequested(context.Background(), "7", "synthetic-chat", "Synthetic", 10, time.Now(), func(context.Context) (sendTargetReader, error) { return reader, nil }, func(context.Context) error { waits++; return nil })
+			if !reader.closed || (got.GUID != "") != tc.want || waits > 6 {
+				t.Fatal("observation failed resource, ambiguity, or work bound")
+			}
+			if tc.want && waits != 6 {
+				t.Fatal("first arrival bypassed ambiguity window")
+			}
+		})
+	}
+}
+
+func TestObservationCancellationClosesReader(t *testing.T) {
+	reader := &fakeObserver{}
+	got := observeRequested(context.Background(), "7", "synthetic-chat", "Synthetic", 10, time.Now(), func(context.Context) (sendTargetReader, error) { return reader, nil }, func(context.Context) error { return context.Canceled })
+	if !reader.closed || reader.checks != 0 || got.GUID != "" {
+		t.Fatal("canceled observation did work or retained receipt")
+	}
+}
+
+func TestCheckpointFailureDoesNotResendOrChangeAcceptance(t *testing.T) {
+	reader := &fakeObserver{checkpointErr: errors.New("PRIVATE checkpoint failure")}
+	calls := 0
+	got, err := send(context.Background(), "7", "Synthetic", func(context.Context) (sendTargetReader, error) { return reader, nil }, func(context.Context, string, string) (domain.SendResult, error) {
+		calls++
+		return domain.SendResult{Status: domain.SendRequested}, nil
+	})
+	if err != nil || got.Status != domain.SendRequested || got.Receipt.GUID != "" || calls != 1 {
+		t.Fatal("tracking failure changed send acceptance")
 	}
 }

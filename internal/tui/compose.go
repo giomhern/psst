@@ -201,13 +201,22 @@ func (m model) finishSend(msg sendCompleted) (tea.Model, tea.Cmd) {
 		}
 		m = m.revealDraftCursor()
 	case domain.SendRequested:
-		m.sendNotice = "Send requested · delivery unknown · r refresh"
+		m.sendNotice = receiptNotice(msg.result.Receipt.Status, false)
 	default:
 		m.sendNotice = "Outcome unknown · check Messages before sending again"
 	}
 	m.pendingDraft = ""
 	if msg.result.Status == domain.SendRequested && m.open != nil {
-		return m.startHistory(nil)
+		next, history := m.startHistory(nil)
+		m = next.(model)
+		if msg.result.Receipt.GUID != "" {
+			next, tracking := m.startReceipt(msg.result.Receipt)
+			return next, tea.Batch(history, tracking)
+		}
+		return m, history
+	}
+	if msg.result.Status == domain.SendRequested && msg.result.Receipt.GUID != "" {
+		return m.startReceipt(msg.result.Receipt)
 	}
 	return m, nil
 }

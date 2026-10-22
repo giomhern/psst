@@ -54,7 +54,7 @@ func TestComposeRequiresReviewAndExplicitConfirmation(t *testing.T) {
 		t.Fatal("duplicate confirmation queued a send")
 	}
 	m, _ = update(m, command())
-	if calls != 1 || m.sending || m.composing || m.pendingDraft != "" || m.draft != "" || !strings.Contains(m.View().Content, "delivery unknown") {
+	if calls != 1 || m.sending || m.composing || m.pendingDraft != "" || m.draft != "" || !strings.Contains(m.View().Content, "status unconfirmed") {
 		t.Fatal("send result was dishonest or retained a retry draft")
 	}
 }

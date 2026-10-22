@@ -151,12 +151,34 @@ one send, or Esc to return to editing. Sending requires this explicit confirmati
 macOS may ask for permission for your terminal to control Messages. If denied,
 allow it under System Settings → Privacy & Security → Automation.
 
-“Send requested” means Messages accepted the automation command; delivery is
-unknown. The UI refreshes recent history after the request, then live polling
-continues. It does not infer delivery or associate a matching row with the send.
-If the outcome is unknown, check Messages before composing another send; the UI
-never retries an ambiguous request or retains it as a ready-to-resend draft.
-A known failure before requesting a send restores the draft for a new review.
+After Messages accepts the automation command, Psst briefly checks for a unique
+new outgoing row using the selected chat, exact text, a pre-send row checkpoint,
+and nearby message timestamps. This normally adds about three seconds before the
+send screen closes. Matching is best effort: simultaneous identical sends from
+another device cannot always be distinguished.
+
+When a row is matched, its local status updates automatically for up to one minute:
+
+| Status | Meaning |
+| --- | --- |
+| Message observed locally | A matching row appeared; sending is not yet confirmed |
+| Messages reports sent | The database records the message as sent |
+| Messages reports delivered | The database records delivery |
+| Messages reports send failed | The database records an explicit send error |
+| Status unconfirmed / tracking unavailable | No reliable result is available |
+
+Missing status columns, ambiguous matches, timeouts, and read errors never count
+as send failures. Tracking stops on delivered/failed evidence, when you start a
+new draft or leave the chat, or after its one-minute deadline. Status is shown in
+the conversation footer for the latest send; historical bubbles do not yet show
+receipts. Messages owns these private fields, and availability varies with macOS,
+message service, and synchronization. This is local database evidence, not a
+separate network acknowledgement or a per-recipient group delivery guarantee.
+
+The UI refreshes recent history after the request, then live polling continues.
+If the automation outcome is unknown, check Messages before composing another
+send; Psst never retries automatically or retains an ambiguous ready-to-resend
+draft. A known failure before requesting a send restores the draft for review.
 
 Only existing chats are supported. Targeting uses the selected local row ID and
 its database GUID, never a display name or guessed participant. Chat types that

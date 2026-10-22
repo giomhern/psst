@@ -225,3 +225,21 @@ The generator only archives the hardcoded synthetic strings in its source. The
 production decoder is pure Go. `FuzzDecodeAttributedBody` exercises arbitrary
 bytes; integration tests cover precedence, malformed/oversized bodies, decoded
 Unicode truncation, embedded markers and unchanged source database bytes.
+
+
+## Outgoing send observation
+
+The optional send observer captures `MAX(message.ROWID)` before automation, then
+reads at most 101 new outgoing candidates in the selected chat (100 plus overflow
+detection). Exact text and a bounded normalized timestamp window establish a
+best-effort unique match; supported attributed bodies use the same bounded decoder
+as history. Duplicate chat joins are deduplicated with `IN`. Ambiguous, oversized,
+unknown-time, or unsupported observations remain unconfirmed.
+
+After matching, the observer follows the message GUID in the original chat using
+optional `is_sent`, `is_delivered`, `date_delivered`, and `error` columns. Missing
+columns do not break chat/history reads or prohibit a confirmed send. Queries use
+short read transactions and close them between observations so WAL updates remain
+visible. Receipt reads never migrate or modify the database. See
+[send receipt contracts](development.md#personal-send-receipts) for status
+precedence, limits, timeouts, and correlation limitations.

@@ -30,6 +30,7 @@ type Source struct {
 	Chats    LoadChats
 	Messages LoadMessages
 	Send     SendMessage
+	Receipt  LoadReceipt
 }
 
 // Run owns the interactive program and waits for active reads and sends to close on exit.
@@ -48,6 +49,7 @@ func Run(ctx context.Context, input *os.File, output io.Writer, source Source) e
 func runProgram(ctx context.Context, input io.Reader, output io.Writer, source Source, options ...tea.ProgramOption) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	gate, wait := newOperationGate()
+	receiptGate, waitReceipts := newOperationGate()
 	chats := chatCommand(runCtx, source.Chats, gate)
 	open := func(id string, request uint64, limit int, before *domain.MessageCursor) (tea.Cmd, context.CancelFunc) {
 		return messageCommand(runCtx, source.Messages, gate, id, request, limit, before)
@@ -60,10 +62,15 @@ func runProgram(ctx context.Context, input io.Reader, output io.Writer, source S
 			return sendCommand(runCtx, source.Send, gate, id, text, request)
 		}
 	}
+	if source.Receipt != nil {
+		m.trackReceipt = func(id, guid string, generation uint64, until time.Time) (tea.Cmd, context.CancelFunc) {
+			return receiptCommand(runCtx, source.Receipt, receiptGate, id, guid, generation, until, waitForReceipt)
+		}
+	}
 	program := tea.NewProgram(m, opts...)
 	ticker := time.NewTicker(liveRefreshInterval)
 	stopped := startRefreshLoop(runCtx, ticker.C, program.Send)
-	defer func() { cancel(); ticker.Stop(); <-stopped; wait() }()
+	defer func() { cancel(); ticker.Stop(); <-stopped; waitReceipts(); wait() }()
 	_, err := program.Run()
 	if ctx.Err() != nil {
 		return nil

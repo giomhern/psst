@@ -21,7 +21,8 @@ func newUICommand(deps dependencies) *cobra.Command {
 				return err
 			}
 			return deps.launchUI(cmd.Context(), cmd.OutOrStdout(), tui.Source{
-				Send: deps.sendMessage,
+				Send:    deps.sendMessage,
+				Receipt: deps.loadReceipt,
 				Chats: func(ctx context.Context) ([]domain.Conversation, error) {
 					return loadChats(ctx, deps.openReader, limit)
 				},

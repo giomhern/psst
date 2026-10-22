@@ -33,6 +33,12 @@ type openConversation func(string, uint64, int, *domain.MessageCursor) (tea.Cmd,
 type chatItem struct{ id, title string }
 
 type model struct {
+	trackReceipt                                func(string, string, uint64, time.Time) (tea.Cmd, context.CancelFunc)
+	receiptCancel                               context.CancelFunc
+	receiptGeneration                           uint64
+	receiptRemaining                            int
+	receiptUntil                                time.Time
+	receipt                                     domain.SendReceipt
 	load                                        tea.Cmd
 	send                                        func(string, string, uint64) tea.Cmd
 	composing, confirming, sending              bool
@@ -87,6 +93,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.composing && !m.confirming {
 			m = m.appendDraft(msg.Content)
 		}
+	case receiptLoaded:
+		return m.finishReceipt(msg)
 	case sendCompleted:
 		return m.finishSend(msg)
 	case messagesLoaded:
