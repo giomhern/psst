@@ -161,11 +161,11 @@ When a row is matched, its local status updates automatically for up to one minu
 
 | Status | Meaning |
 | --- | --- |
-| Message observed locally | A matching row appeared; sending is not yet confirmed |
-| Messages reports sent | The database records the message as sent |
-| Messages reports delivered | The database records delivery |
-| Messages reports send failed | The database records an explicit send error |
-| Status unconfirmed / tracking unavailable | No reliable result is available |
+| Pending | A matching row appeared; sending is not yet confirmed |
+| Sent | The database records the message as sent |
+| Delivered | The database records delivery |
+| Send failed | The database records an explicit send error |
+| Unconfirmed / status unavailable | No reliable result is available |
 
 Missing status columns, ambiguous matches, timeouts, and read errors never count
 as send failures. Tracking stops on delivered/failed evidence, when you start a

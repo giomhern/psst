@@ -195,7 +195,7 @@ func (m model) finishSend(msg sendCompleted) (tea.Model, tea.Cmd) {
 		m.draftCursor = len(m.draft)
 		m.composing = true
 		m.confirming = false
-		m.draftError = "Send not requested · Enter to review again"
+		m.draftError = "Not sent · Enter to review"
 		if errors.Is(msg.err, domain.ErrAutomationDenied) {
 			m.draftError = "Allow Messages in System Settings → Privacy & Security → Automation"
 		}
@@ -203,7 +203,7 @@ func (m model) finishSend(msg sendCompleted) (tea.Model, tea.Cmd) {
 	case domain.SendRequested:
 		m.sendNotice = receiptNotice(msg.result.Receipt.Status, false)
 	default:
-		m.sendNotice = "Outcome unknown · check Messages before sending again"
+		m.sendNotice = "Send unconfirmed · check Messages"
 	}
 	m.pendingDraft = ""
 	if msg.result.Status == domain.SendRequested && m.open != nil {

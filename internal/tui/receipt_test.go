@@ -29,11 +29,11 @@ func TestReceiptUpdatesAreBoundedAndNeverSend(t *testing.T) {
 		m.send = func(string, string, uint64) tea.Cmd { t.Fatal("receipt observation sent a message"); return nil }
 		next, command := m.startReceipt(domain.SendReceipt{GUID: "synthetic-message", Status: domain.DeliveryPending})
 		m = next.(model)
-		if command == nil || !strings.Contains(m.sendNotice, "checking") {
+		if command == nil || m.sendNotice != "Pending…" {
 			t.Fatal("receipt polling did not start")
 		}
 		m, command = update(m, receiptLoaded{generation: m.receiptGeneration, receipt: domain.SendReceipt{GUID: "synthetic-message", Status: domain.DeliverySent}})
-		if command == nil || !strings.Contains(m.sendNotice, "reports sent") {
+		if command == nil || !strings.Contains(m.sendNotice, "Sent") {
 			t.Fatal("sent evidence not shown")
 		}
 		m, command = update(m, receiptLoaded{generation: m.receiptGeneration, receipt: domain.SendReceipt{GUID: "synthetic-message", Status: final}})
@@ -47,7 +47,7 @@ func TestReceiptUpdatesAreBoundedAndNeverSend(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		m, _ = update(m, receiptLoaded{generation: m.receiptGeneration, receipt: m.receipt})
 	}
-	if m.receiptCancel != nil || strings.Contains(m.sendNotice, "checking") || strings.Contains(m.sendNotice, "failed") {
+	if m.receiptCancel != nil || m.sendNotice != "Sent" || strings.Contains(m.sendNotice, "failed") {
 		t.Fatal("bounded tracking failed or called timeout a send failure")
 	}
 }
@@ -61,7 +61,7 @@ func TestReceiptDeadlineAndStaleResults(t *testing.T) {
 	generation := m.receiptGeneration
 	now = now.Add(time.Minute)
 	m, command := update(m, receiptLoaded{generation: generation, err: context.DeadlineExceeded})
-	if command != nil || strings.Contains(m.sendNotice, "failed") || strings.Contains(m.sendNotice, "unavailable") || !strings.Contains(m.sendNotice, "delivery unconfirmed") {
+	if command != nil || strings.Contains(m.sendNotice, "failed") || strings.Contains(m.sendNotice, "unavailable") || m.sendNotice != "Sent" {
 		t.Fatal("deadline misreported failure")
 	}
 	m = m.stopReceipt()
@@ -79,7 +79,7 @@ func TestReceiptErrorsAndMissingRowsPreserveEvidence(t *testing.T) {
 		m = next.(model)
 		result.generation = m.receiptGeneration
 		m, command := update(m, result)
-		if command != nil || !strings.Contains(m.sendNotice, "reports sent") || !strings.Contains(m.sendNotice, "tracking unavailable") || strings.Contains(m.View().Content, "PRIVATE") {
+		if command != nil || !strings.Contains(m.sendNotice, "Sent") || !strings.Contains(m.sendNotice, "status unavailable") || strings.Contains(m.View().Content, "PRIVATE") {
 			t.Fatal("tracking failure leaked or discarded evidence")
 		}
 	}

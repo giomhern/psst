@@ -70,21 +70,18 @@ func (m model) startReceipt(receipt domain.SendReceipt) (tea.Model, tea.Cmd) {
 func receiptNotice(status domain.DeliveryStatus, checking bool) string {
 	switch status {
 	case domain.DeliveryFailed:
-		return "Messages reports send failed · no automatic retry"
+		return "Send failed"
 	case domain.DeliveryDelivered:
-		return "Messages reports delivered"
+		return "Delivered"
 	case domain.DeliverySent:
-		if checking {
-			return "Messages reports sent · checking delivery…"
-		}
-		return "Messages reports sent · delivery unconfirmed"
+		return "Sent"
 	case domain.DeliveryPending:
 		if checking {
-			return "Message observed locally · checking send status…"
+			return "Pending…"
 		}
-		return "Message observed locally · send status unconfirmed"
+		return "Send unconfirmed"
 	default:
-		return "Send requested · status unconfirmed · check Messages"
+		return "Status unconfirmed · check Messages"
 	}
 }
 
@@ -115,7 +112,10 @@ func (m model) finishReceipt(msg receiptLoaded) (tea.Model, tea.Cmd) {
 	}
 	if msg.err != nil || msg.receipt.GUID != m.receipt.GUID {
 		m.receiptRemaining = 0
-		m.sendNotice = receiptNotice(m.receipt.Status, false) + " · tracking unavailable"
+		m.sendNotice = "Status unavailable · check Messages"
+		if m.receipt.Status == domain.DeliverySent {
+			m.sendNotice = "Sent · status unavailable"
+		}
 		return m, nil
 	}
 	// A later pending/missing flag must not erase previously observed sent evidence.

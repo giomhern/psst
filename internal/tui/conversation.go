@@ -250,7 +250,7 @@ func (m model) conversationView() string {
 		status = fmt.Sprintf("Draft · %d / %d characters", utf8.RuneCountInString(m.draft), domain.MaxSendTextRunes)
 		footer = "Enter review · Ctrl+J newline · Esc cancel · Ctrl+U clear"
 		if m.confirming {
-			status = "Review recipient and message before sending"
+			status = "Review before sending"
 			footer = "↑↓ review · Ctrl+S confirm send · Esc edit"
 		}
 		if m.draftError != "" {
@@ -258,8 +258,8 @@ func (m model) conversationView() string {
 		}
 	}
 	if m.sending {
-		status = "Requesting send / checking local status… · do not retry"
-		footer = "Waiting for Messages · Ctrl+C quit"
+		status = "Sending…"
+		footer = "Ctrl+C quit"
 	}
 	for len(lines) < 3+m.visibleRows() {
 		lines = append(lines, "")

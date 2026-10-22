@@ -54,7 +54,7 @@ func TestComposeRequiresReviewAndExplicitConfirmation(t *testing.T) {
 		t.Fatal("duplicate confirmation queued a send")
 	}
 	m, _ = update(m, command())
-	if calls != 1 || m.sending || m.composing || m.pendingDraft != "" || m.draft != "" || !strings.Contains(m.View().Content, "status unconfirmed") {
+	if calls != 1 || m.sending || m.composing || m.pendingDraft != "" || m.draft != "" || !strings.Contains(m.View().Content, "Status unconfirmed") {
 		t.Fatal("send result was dishonest or retained a retry draft")
 	}
 }
@@ -118,7 +118,7 @@ func TestSendFailureAndUnknownOutcomeHaveNoAutomaticRetry(t *testing.T) {
 			if tc.restore && m.draft != "Synthetic draft" {
 				t.Fatal("known unsent draft was lost")
 			}
-			if !tc.restore && (m.draft != "" || !strings.Contains(m.View().Content, "Outcome unknown")) {
+			if !tc.restore && (m.draft != "" || !strings.Contains(m.View().Content, "Send unconfirmed")) {
 				t.Fatal("ambiguous send remained ready to retry")
 			}
 			if strings.Contains(m.View().Content, "PRIVATE") {
