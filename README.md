@@ -25,7 +25,7 @@ Rich formatting, authentication, room APIs, and WebSockets are not implemented.
 
 ## Quick start
 
-Install Go **1.27.2 or newer**. Docker with Compose is optional until database work
+Install Go **1.27.3 or newer**. Docker with Compose is optional until database work
 begins. Personal requires macOS; the Sessions server targets Linux and macOS.
 The CLI uses Cobra and the Personal adapter uses the pinned pure-Go
 `modernc.org/sqlite` driver; no C compiler is required for ordinary builds. Dependencies download on first use.

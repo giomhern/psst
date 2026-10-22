@@ -369,3 +369,7 @@ This is bounded polling, not a complete change log. New rows outside the latest
 reloaded. Deletions and edits outside that window are not reconciled, and matching
 a local row never establishes delivery or proves which send attempt created it.
 No real Messages data is needed in tests or terminal previews.
+
+The minimum toolchain is Go 1.27.3, including the standard-library certificate
+verification update in [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809).
+CI selects the same patch version from `go.mod`.
