@@ -27,6 +27,11 @@ func (m model) contentWidth() int {
 }
 
 func (m model) startHistory(before *domain.MessageCursor) (tea.Model, tea.Cmd) {
+	m = m.cancelLive()
+	if before == nil {
+		m.newMessages = false
+		m.liveFailed = false
+	}
 	m.request++
 	m.historyLoading, m.historyFailed = true, false
 	m.loadingOlder = before != nil
@@ -67,10 +72,12 @@ func (m model) updateConversation(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.messageOffset = 0
 		m.historyLoading, m.historyFailed, m.historyLoaded, m.loadingOlder = false, false, false, false
 		m.nextBefore = nil
+		m.livePolling, m.liveFailed, m.newMessages = false, false, false
 		m.sendNotice = ""
 		return m, nil
 	case "i":
 		if m.send != nil && !m.historyLoading {
+			m = m.cancelLive()
 			m.composing = true
 			m.confirming = false
 			m.draft, m.draftError, m.sendNotice = "", "", ""
@@ -187,7 +194,7 @@ func (m model) conversationView() string {
 		content = m.composerLines()
 		offset = max(0, min(m.composeOffset, max(0, len(content)-m.visibleRows())))
 	}
-	status := "o older · r latest"
+	status := "Live · o older · r latest"
 	if m.historyLoaded && m.nextBefore == nil {
 		status = "End of locally synchronized history · r latest"
 	}
@@ -227,6 +234,14 @@ func (m model) conversationView() string {
 	}
 	if m.sendNotice != "" && !m.historyLoading && !m.historyFailed {
 		status = m.sendNotice
+	}
+	if !m.historyLoading && !m.historyFailed {
+		if m.liveFailed {
+			status = "Live refresh unavailable · retrying automatically"
+		}
+		if m.newMessages {
+			status = "New messages available · r latest"
+		}
 	}
 	if m.composing {
 		status = fmt.Sprintf("Draft · %d / %d characters", utf8.RuneCountInString(m.draft), domain.MaxSendTextRunes)

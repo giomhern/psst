@@ -48,6 +48,7 @@ type model struct {
 	historyLoading, historyFailed               bool
 	historyLoaded, loadingOlder                 bool
 	nextBefore                                  *domain.MessageCursor
+	livePolling, liveFailed, newMessages        bool
 	chats                                       []chatItem
 	selected, offset                            int
 	width, height                               int
@@ -65,6 +66,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg := message.(type) {
+	case liveRefreshTick:
+		return m.refreshLive()
 	case tea.WindowSizeMsg:
 		var anchor string
 		var line int
@@ -86,12 +89,24 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.conversation == nil || msg.request != m.request {
 			return m, nil
 		}
-		m.historyLoading, m.historyFailed = false, msg.err != nil
+		live := m.livePolling
+		m.livePolling = false
+		if !live {
+			m.historyLoading, m.historyFailed = false, msg.err != nil
+		}
 		if m.cancel != nil {
 			m.cancel()
 			m.cancel = nil
 		}
-		if msg.err == nil {
+		if live {
+			m.liveFailed = msg.err != nil
+			if msg.err == nil {
+				m = m.applyLive(msg.page)
+				if !m.loadingOlder {
+					m.historyFailed = false
+				}
+			}
+		} else if msg.err == nil {
 			m = m.applyHistory(msg.page)
 		}
 	case chatsLoaded:

@@ -90,9 +90,11 @@ Color follows the terminal capabilities and `NO_COLOR`.
 
 The selection follows its chat ID across refreshes. Reads run outside the UI
 update loop, have an eight-second deadline, and close their reader after each
-load. Refresh is manual; repeated refresh keys do not queue extra reads. On a
-refresh failure, previous results remain visible. Quit cancels and joins active
-reads before the UI entry point returns, and Bubble Tea restores the terminal.
+load. The active chat or visible chat list refreshes every two seconds when
+idle; reads never overlap within a screen or queue behind a pending refresh.
+Composing and sending pause polling. Read failures keep previous results and
+retry on a later tick. Quit cancels and joins the refresh worker and active reads
+before the UI entry point returns, and Bubble Tea restores the terminal.
 Titles and message content are escaped before styling; message text wraps to the
 available display width. Returning to the list discards the loaded message buffer.
 The UI writes no transcript or draft to disk and never uploads Personal content
@@ -108,8 +110,12 @@ the visible message and line stay in place as history is merged. Scroll up to
 read the added messages. Only one page loads at a time; failures keep the current
 messages and cursor, and `o` retries. The UI shows when local history ends.
 
-The buffer stops at 200 messages, with a visible limit notice. It does not evict
-loaded messages. Press `r` to replace the buffer with the latest page, or use
+Older-page loading stops at 200 messages, with a visible limit notice. Live
+refresh follows the bottom automatically; while reading older messages, your
+visible message and line stay in place. At capacity or after a burst larger than
+the latest snapshot, readers keep their buffer and see “New messages available.”
+Followers at the bottom roll to a fresh latest window instead. Press `r` to
+replace the buffer with the latest page, or use
 `personal read <chat ID>` and its `--before` cursor to browse beyond the UI limit.
 Plain CLI commands
 continue to work without an interactive terminal. The UI itself does not request
@@ -129,8 +135,8 @@ macOS may ask for permission for your terminal to control Messages. If denied,
 allow it under System Settings → Privacy & Security → Automation.
 
 “Send requested” means Messages accepted the automation command; delivery is
-unknown. The UI refreshes recent history once, but does not claim that a matching
-message was observed or delivered. Use `r` to read again if it has not appeared.
+unknown. The UI refreshes recent history after the request, then live polling
+continues. It does not infer delivery or associate a matching row with the send.
 If the outcome is unknown, check Messages before composing another send; the UI
 never retries an ambiguous request or retains it as a ready-to-resend draft.
 A known failure before requesting a send restores the draft for a new review.

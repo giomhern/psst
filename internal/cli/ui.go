@@ -14,7 +14,7 @@ func newUICommand(deps dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ui",
 		Short: "Browse local chats in an interactive interface",
-		Long:  "Browse recent locally synchronized chat titles with keyboard navigation and manual refresh. Requires an interactive terminal. Enter opens the latest 20 messages; Esc returns to chats. Press o for older pages, up to 200 retained messages; r returns to the latest page. Press i to compose, Enter to review, and Ctrl+S to confirm a Messages send. No uploading to Sessions occurs.",
+		Long:  "Browse recent locally synchronized chat titles with keyboard navigation and idle live refresh every two seconds. Requires an interactive terminal. Enter opens the latest 20 messages; Esc returns to chats. Press o for older pages, up to 200 retained messages; r returns to the latest page. Press i to compose, Enter to review, and Ctrl+S to confirm a Messages send. No uploading to Sessions occurs.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := domain.ValidateConversationLimit(limit); err != nil {

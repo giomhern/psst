@@ -55,10 +55,14 @@ func compareMessages(a, b domain.Message) int {
 	}
 	// Local row IDs are canonical positive decimal strings. Length then lexical
 	// order compares them numerically without integer overflow or conversions.
-	if order := cmp.Compare(len(a.ID), len(b.ID)); order != 0 {
+	return compareMessageIDs(a.ID, b.ID)
+}
+
+func compareMessageIDs(a, b string) int {
+	if order := cmp.Compare(len(a), len(b)); order != 0 {
 		return order
 	}
-	return strings.Compare(a.ID, b.ID)
+	return strings.Compare(a, b)
 }
 
 func (m model) historyAnchor() (string, int) {

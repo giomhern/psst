@@ -231,8 +231,8 @@ before applying trusted styles. Conversation bodies wrap using `x/ansi`, with
 scrolling over the retained history and initial position at its bottom. The viewport
 and rendered dimensions are bounded;
 small terminals show a resize prompt. No pointer to the model is shared with I/O
-workers. There is no automatic polling, reader held for the whole UI session,
-Sessions connection in this checkpoint. Confirmed text sends use a separate
+workers. A cancellable two-second timer now drives live refresh; no database
+reader is held for the whole UI session and Sessions remains separate. Confirmed text sends use a separate
 optional callback described below.
 
 Tests use synthetic chats for state transitions, navigation, viewport bounds,
@@ -287,10 +287,12 @@ A read that fails leaves both messages and cursor intact for `o` to retry.
 
 The buffer retains at most 200 messages; each command requests the smaller of
 20 or the remaining capacity. At capacity `o` stops, with a visible notice;
-`r` replaces the buffer with the latest page. The UI does not evict messages or
-automatically fetch when scrolling. End-of-history follows the returned nil
-cursor, including an empty older page after local deletions. Pages are separate
-read snapshots, so already loaded messages are not a live view of later edits.
+`r` replaces the buffer with the latest page. Explicit older-page loading does
+not evict messages or automatically fetch when scrolling. Live followers can roll to a new latest window at capacity; readers
+keep their buffer and receive a new-messages notice. End-of-history follows the
+returned nil cursor, including an empty older page after local deletions. Pages are separate
+read snapshots. Live refresh updates matching rows in its latest bounded window;
+older rows outside that window remain snapshots.
 
 Pane width follows terminal resize events, subtracting only the outer margins
 and the sidebar/divider when present. The former 88-column pane cap is removed.
@@ -333,4 +335,37 @@ outcomes discard the pending draft and show a check-Messages notice. Safe static
 notices never display raw process errors. Editing is initially at the end of the
 draft; backspace removes one Unicode code point, not an entire grapheme cluster.
 Tests and terminal previews use fake senders; the fixed AppleScript was compiled
-for syntax validation without being executed. Real delivery has not been tested.
+for syntax validation without being executed. The maintainer subsequently confirmed a real send worked locally.
+
+
+## Live Personal refresh
+
+The runner owns one `time.Ticker` and one small goroutine. The goroutine sends
+`liveRefreshTick` events to Bubble Tea; only Update starts I/O or changes model
+state. The ticker's bounded channel and synchronous `Program.Send` provide
+backpressure, and a pending read causes subsequent ticks to be skipped. Shutdown
+cancels the parent context, stops the ticker, joins its worker, then joins active
+I/O callbacks. Tests inject a tick channel rather than waiting on wall-clock time.
+
+When the list is visible, ticks refresh chat summaries while retaining selection
+by chat ID. An open conversation queries up to 100 latest rows through the
+existing read-only loader. It merges newly inserted row IDs, updates matching
+rows, and preserves chronological/unknown-time ordering. It does not refill the
+buffer with older rows merely because the live query has a larger page size.
+At the bottom, the viewport follows arrivals; otherwise the message/line anchor
+is restored. Composing, confirming, sending, and manual history loads pause polls.
+Starting composition or a manual read cancels an active poll and invalidates its
+request ID so an already queued result cannot interrupt the new state.
+
+Retained history remains bounded at 200 messages. If the latest snapshot has no
+overlap with the buffer after a large burst, or merging would exceed capacity,
+a bottom follower replaces the buffer with the fresh latest window and cursor.
+An older-history reader keeps the buffer and sees “New messages available · r
+latest” rather than having content evicted or a gap silently joined. Poll errors
+keep the buffer/cursor intact and retry automatically; sends are never retried.
+
+This is bounded polling, not a complete change log. New rows outside the latest
+100 by the reader's existing date ordering may not appear until history is
+reloaded. Deletions and edits outside that window are not reconciled, and matching
+a local row never establishes delivery or proves which send attempt created it.
+No real Messages data is needed in tests or terminal previews.

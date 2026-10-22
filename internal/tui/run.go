@@ -48,7 +48,6 @@ func Run(ctx context.Context, input *os.File, output io.Writer, source Source) e
 func runProgram(ctx context.Context, input io.Reader, output io.Writer, source Source, options ...tea.ProgramOption) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	gate, wait := newOperationGate()
-	defer func() { cancel(); wait() }()
 	chats := chatCommand(runCtx, source.Chats, gate)
 	open := func(id string, request uint64, limit int, before *domain.MessageCursor) (tea.Cmd, context.CancelFunc) {
 		return messageCommand(runCtx, source.Messages, gate, id, request, limit, before)
@@ -61,7 +60,11 @@ func runProgram(ctx context.Context, input io.Reader, output io.Writer, source S
 			return sendCommand(runCtx, source.Send, gate, id, text, request)
 		}
 	}
-	_, err := tea.NewProgram(m, opts...).Run()
+	program := tea.NewProgram(m, opts...)
+	ticker := time.NewTicker(liveRefreshInterval)
+	stopped := startRefreshLoop(runCtx, ticker.C, program.Send)
+	defer func() { cancel(); ticker.Stop(); <-stopped; wait() }()
+	_, err := program.Run()
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -143,4 +146,26 @@ func sendCommand(ctx context.Context, send SendMessage, gate operationGate, id, 
 		result, err := send(operation, id, text)
 		return sendCompleted{request: request, result: result, err: err}
 	}, sendCompleted{request: request, err: domain.ErrSendUnavailable})
+}
+
+// The runner owns ticks and cancellation; this worker sends only refresh events.
+// It alone closes done. deliver must unblock when ctx is canceled (Program.Send
+// does so through the program's child context). Shutdown joins the worker.
+func startRefreshLoop(ctx context.Context, ticks <-chan time.Time, deliver func(tea.Msg)) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case _, ok := <-ticks:
+				if !ok || ctx.Err() != nil {
+					return
+				}
+				deliver(liveRefreshTick{})
+			}
+		}
+	}()
+	return done
 }
