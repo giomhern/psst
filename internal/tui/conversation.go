@@ -82,6 +82,7 @@ func (m model) updateConversation(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.confirming = false
 			m.draft, m.draftError, m.sendNotice = "", "", ""
 			m.composeOffset = 0
+			m.draftCursor = 0
 			return m, nil
 		}
 	case "r":
@@ -245,7 +246,7 @@ func (m model) conversationView() string {
 	}
 	if m.composing {
 		status = fmt.Sprintf("Draft · %d / %d characters", utf8.RuneCountInString(m.draft), domain.MaxSendTextRunes)
-		footer = "Enter review · Esc cancel · Ctrl+U clear · Ctrl+C quit"
+		footer = "Enter review · Ctrl+J newline · Esc cancel · Ctrl+U clear"
 		if m.confirming {
 			status = "Review recipient and message before sending"
 			footer = "↑↓ review · Ctrl+S confirm send · Esc edit"

@@ -332,8 +332,31 @@ before sending again. No automatic resend or delivery inference is implemented.
 A requested send clears its draft and triggers one recent-history read. A known
 unsent failure restores the draft for editing and a fresh confirmation. Unknown
 outcomes discard the pending draft and show a check-Messages notice. Safe static
-notices never display raw process errors. Editing is initially at the end of the
-draft; backspace removes one Unicode code point, not an entire grapheme cluster.
+notices never display raw process errors.
+
+The composer stores its cursor as a byte offset because Go string slicing uses
+bytes. That offset must always be a grapheme boundary: `rune` represents a Unicode
+code point, while an accented character, flag, or joined emoji may contain several
+code points. `editor.go` uses the existing pinned `uniseg` dependency directly to
+find these boundaries, including after insertions or deletions that join adjacent
+clusters. The send limit still counts code points, independently of cursor units.
+Like other TUI handlers, these value-receiver methods return the next model to
+Bubble Tea's Update loop, which owns all draft changes.
+
+Left/Right and deletion follow graphemes. Word shortcuts traverse Unicode
+whitespace-delimited runs in one scan; punctuation remains part of a run. Home/End
+follow logical lines, Ctrl+Home/End follow the whole draft, and Up/Down choose the
+nearest non-overshooting display column on the adjacent logical line. Soft wraps
+are display-only; Up/Down do not treat them as separate logical lines or remember
+a preferred column after crossing a shorter line. Ctrl+J provides newline input
+when a terminal cannot distinguish Shift+Enter from Enter.
+
+Rendering preserves LF line breaks and emoji zero-width joiners, while escaping
+terminal and bidirectional controls before wrapping.
+The cursor marker participates in wrapping, and editing or resizing reveals its
+row. Review remains read-only, shows the whole draft without the marker, and Esc
+returns to the same editing position. Synthetic regression and fuzz tests cover
+cluster boundaries, invalid/oversized paste, line navigation, and viewport bounds.
 Tests and terminal previews use fake senders; the fixed AppleScript was compiled
 for syntax validation without being executed. The maintainer subsequently confirmed a real send worked locally.
 

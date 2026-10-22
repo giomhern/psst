@@ -124,9 +124,26 @@ Contacts access; use the explicit authorization command below when needed.
 ## Send a Personal message
 
 Open a chat in `personal ui`, then press **i** to compose. Type or paste up to
-4,000 Unicode characters. Backspace edits at the end, Ctrl+U clears the draft,
-and Esc cancels. Shift+Enter inserts a newline when supported by the terminal;
-pasted newlines are preserved (shown escaped in the preview).
+4,000 Unicode code points. Edit anywhere in the draft using these keys:
+
+| Key | Editing action |
+| --- | --- |
+| Left / Right | Move by a visible character, including combined emoji |
+| Backspace / Delete | Delete the previous / next visible character |
+| Ctrl+Left / Ctrl+Right, or Alt+B / Alt+F | Move across whitespace-separated words |
+| Ctrl+W / Alt+Backspace | Delete the previous word |
+| Home / End, or Ctrl+A / Ctrl+E | Move to the start / end of the current line |
+| Ctrl+Home / Ctrl+End | Move to the start / end of the draft |
+| Up / Down | Move between logical lines, using the displayed column |
+| Ctrl+J, or Shift+Enter when supported | Insert a newline |
+| Ctrl+U | Clear the draft |
+| Esc | Cancel composition |
+
+Pasted newlines appear as separate lines in both editing and review. Long lines
+wrap to the terminal width; the cursor stays visible when editing or resizing.
+Other terminal control characters remain escaped. Some terminals intercept
+modified keys; Ctrl+J and Alt+B / Alt+F provide alternatives. The 4,000-code-point
+limit is unchanged: one visible emoji can contain several code points.
 
 Press **Enter** to review the recipient, local chat ID and message. Scroll with
 Up/Down or Page Up/Page Down when the preview is long. Press **Ctrl+S** to confirm

@@ -38,6 +38,7 @@ type model struct {
 	composing, confirming, sending              bool
 	draft, pendingDraft, draftError, sendNotice string
 	composeOffset                               int
+	draftCursor                                 int // Byte offset at a grapheme boundary; owned by Update.
 	now                                         func() time.Time
 	open                                        openConversation
 	cancel                                      context.CancelFunc
@@ -78,6 +79,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = max(1, min(msg.Height, 120))
 		if m.conversation != nil {
 			m = m.restoreHistoryAnchor(anchor, line)
+			if m.composing && !m.confirming {
+				m = m.revealDraftCursor()
+			}
 		}
 	case tea.PasteMsg:
 		if m.composing && !m.confirming {

@@ -22,14 +22,15 @@ func (m model) appendDraft(text string) model {
 		m.draftError = "Draft must be valid text, up to 4,000 characters"
 		return m
 	}
-	candidate := m.draft + text
+	candidate := m.draft[:m.draftCursor] + text + m.draft[m.draftCursor:]
 	if utf8.RuneCountInString(candidate) > domain.MaxSendTextRunes {
 		m.draftError = "Draft limit: 4,000 characters"
 		return m
 	}
 	m.draft = candidate
+	m.draftCursor = draftBoundary(candidate, m.draftCursor+len(text), true)
 	m.draftError = ""
-	m.composeOffset = max(0, len(m.composerLines())-m.visibleRows())
+	m = m.revealDraftCursor()
 	return m
 }
 
@@ -42,13 +43,14 @@ func (m model) updateComposer(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc":
 			m.confirming = false
-			m.composeOffset = max(0, len(m.composerLines())-m.visibleRows())
+			m = m.revealDraftCursor()
 		case "ctrl+s":
 			m.request++
 			m.sending = true
 			m.composing, m.confirming = false, false
 			m.pendingDraft = m.draft
 			m.draft = ""
+			m.draftCursor = 0
 			return m, m.send(m.conversation.id, m.pendingDraft, m.request)
 		case "up":
 			m.composeOffset--
@@ -70,6 +72,7 @@ func (m model) updateComposer(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.composing = false
 		m.draft = ""
+		m.draftCursor = 0
 		m.draftError = ""
 		m.composeOffset = 0
 	case "enter":
@@ -80,23 +83,45 @@ func (m model) updateComposer(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.confirming = true
 		m.draftError = ""
 		m.composeOffset = 0
+	case "left":
+		m.draftCursor = draftBoundary(m.draft, m.draftCursor, false)
+	case "right":
+		m.draftCursor = draftBoundary(m.draft, m.draftCursor+1, true)
+	case "ctrl+left", "alt+left", "alt+b":
+		m.draftCursor = draftWord(m.draft, m.draftCursor, false)
+	case "ctrl+right", "alt+right", "alt+f":
+		m.draftCursor = draftWord(m.draft, m.draftCursor, true)
+	case "home", "ctrl+a":
+		m.draftCursor = strings.LastIndex(m.draft[:m.draftCursor], "\n") + 1
+	case "end", "ctrl+e":
+		m.draftCursor = draftLineEnd(m.draft, m.draftCursor)
+	case "ctrl+home":
+		m.draftCursor = 0
+	case "ctrl+end":
+		m.draftCursor = len(m.draft)
+	case "up":
+		m.draftCursor = draftVertical(m.draft, m.draftCursor, false)
+	case "down":
+		m.draftCursor = draftVertical(m.draft, m.draftCursor, true)
 	case "backspace":
-		if len(m.draft) > 0 {
-			_, size := utf8.DecodeLastRuneInString(m.draft)
-			m.draft = m.draft[:len(m.draft)-size]
-		}
-		m.draftError = ""
-		m.composeOffset = max(0, len(m.composerLines())-m.visibleRows())
+		m = m.deleteDraft(draftBoundary(m.draft, m.draftCursor, false), m.draftCursor)
+	case "delete", "ctrl+d":
+		m = m.deleteDraft(m.draftCursor, draftBoundary(m.draft, m.draftCursor+1, true))
+	case "ctrl+w", "alt+backspace":
+		m = m.deleteDraft(draftWord(m.draft, m.draftCursor, false), m.draftCursor)
 	case "ctrl+u":
 		m.draft = ""
+		m.draftCursor = 0
 		m.draftError = ""
-		m.composeOffset = 0
-	case "shift+enter":
+	case "shift+enter", "ctrl+j":
 		m = m.appendDraft("\n")
 	default:
 		if msg.Text != "" {
 			m = m.appendDraft(msg.Text)
 		}
+	}
+	if m.composing && !m.confirming {
+		m = m.revealDraftCursor()
 	}
 	return m, nil
 }
@@ -109,11 +134,54 @@ func (m model) composerLines() []string {
 	title += displayText(m.conversation.title)
 	rows := strings.Split(ansi.Wrap(title, m.contentWidth(), ""), "\n")
 	rows = append(rows, "Local chat ID: "+displayText(m.conversation.id), "")
-	text := displayText(m.draft)
-	if !m.confirming {
-		text += "▏"
+	body, _ := m.draftLines()
+	return append(rows, body...)
+}
+
+func draftText(text string) string {
+	parts := strings.Split(text, "\n")
+	for i := range parts {
+		// Preserve emoji joiners without unescaping literal backslash text.
+		joined := strings.Split(parts[i], "\u200d")
+		for j := range joined {
+			joined[j] = displayText(joined[j])
+		}
+		parts[i] = strings.Join(joined, "\u200d")
 	}
-	return append(rows, strings.Split(ansi.Wrap(text, m.contentWidth(), ""), "\n")...)
+	return strings.Join(parts, "\n")
+}
+
+// draftLines escapes terminal controls but preserves intentional line breaks.
+func (m model) draftLines() ([]string, int) {
+	text := draftText(m.draft)
+	cursor := 0
+	if !m.confirming {
+		prefix := draftText(m.draft[:m.draftCursor])
+		cursor = strings.Count(prefix, "▏")
+		text = prefix + "▏" + draftText(m.draft[m.draftCursor:])
+	}
+	rows := strings.Split(ansi.Hardwrap(text, m.contentWidth(), true), "\n")
+	for i, row := range rows {
+		count := strings.Count(row, "▏")
+		if count > cursor {
+			return rows, i
+		}
+		cursor -= count
+	}
+	return rows, 0
+}
+
+func (m model) revealDraftCursor() model {
+	rows, cursor := m.draftLines()
+	cursor += len(m.composerLines()) - len(rows)
+	if cursor < m.composeOffset {
+		m.composeOffset = cursor
+	}
+	if cursor >= m.composeOffset+m.visibleRows() {
+		m.composeOffset = cursor - m.visibleRows() + 1
+	}
+	m.composeOffset = max(0, min(m.composeOffset, max(0, len(m.composerLines())-m.visibleRows())))
+	return m
 }
 
 func (m model) finishSend(msg sendCompleted) (tea.Model, tea.Cmd) {
@@ -124,13 +192,14 @@ func (m model) finishSend(msg sendCompleted) (tea.Model, tea.Cmd) {
 	switch msg.result.Status {
 	case domain.SendNotRequested:
 		m.draft = m.pendingDraft
+		m.draftCursor = len(m.draft)
 		m.composing = true
 		m.confirming = false
 		m.draftError = "Send not requested · Enter to review again"
 		if errors.Is(msg.err, domain.ErrAutomationDenied) {
 			m.draftError = "Allow Messages in System Settings → Privacy & Security → Automation"
 		}
-		m.composeOffset = max(0, len(m.composerLines())-m.visibleRows())
+		m = m.revealDraftCursor()
 	case domain.SendRequested:
 		m.sendNotice = "Send requested · delivery unknown · r refresh"
 	default:
