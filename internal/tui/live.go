@@ -17,7 +17,7 @@ func (m model) refreshLive() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.conversation == nil {
-		if m.load == nil || m.loading {
+		if m.searching || m.load == nil || m.loading {
 			return m, nil
 		}
 		m.loading = true

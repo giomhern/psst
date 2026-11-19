@@ -25,7 +25,7 @@ Rich formatting, authentication, room APIs, and WebSockets are not implemented.
 
 ## Quick start
 
-Install Go **1.27.3 or newer**. Docker with Compose is optional until database work
+Install Go **1.27.4 or newer**. Docker with Compose is optional until database work
 begins. Personal requires macOS; the Sessions server targets Linux and macOS.
 The CLI uses Cobra and the Personal adapter uses the pinned pure-Go
 `modernc.org/sqlite` driver; no C compiler is required for ordinary builds. Dependencies download on first use.
@@ -81,12 +81,28 @@ Color follows the terminal capabilities and `NO_COLOR`.
 | Home / End or `g` / `G` | First / last loaded chat or message line |
 | Page Up / Page Down | Move one visible page |
 | Enter | Open selected conversation at the latest messages |
+| `/` | Search loaded chats by title or available phone/email identifiers |
 | `i` | Compose a message in the open chat |
 | Enter, then Ctrl+S | Review the draft, then confirm sending |
 | `o` | Load an older message page |
 | `r` | Refresh chats / return to the latest message page |
-| Esc | Return to chats; quit from the chat list |
+| Esc | Clear search; return to chats; quit from the unfiltered chat list |
 | `q`, Ctrl-C | Quit |
+
+Press **/** in the chat list to search. Results filter as you type using a
+case-insensitive substring match. Use arrow keys to choose a result, **Enter** to
+open it, and **Esc** to clear the search. While searching, letters such as `q`,
+`r`, `j`, and `k` are query text; Ctrl+C still quits. Backspace removes a visible
+character, Ctrl+U clears the query, and paste accepts one line up to 200 Unicode
+code points. Returning from a conversation preserves the search.
+
+Search covers only the currently loaded chats (50 by default, at most 100 with
+`--limit 100`), their displayed titles, and available participant identifiers.
+Named groups do not load participant identifiers; unnamed chats expose at most
+five. Search does not read message bodies or fetch additional Contacts data.
+Phone/email matching uses the stored text, including punctuation. Automatic list
+refresh pauses while searching; an already-running read can still finish and
+update the filtered results. Queries stay in memory and are never logged or saved.
 
 The selection follows its chat ID across refreshes. Reads run outside the UI
 update loop, have an eight-second deadline, and close their reader after each

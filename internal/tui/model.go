@@ -30,9 +30,11 @@ type messagesLoaded struct {
 
 type openConversation func(string, uint64, int, *domain.MessageCursor) (tea.Cmd, context.CancelFunc)
 
-type chatItem struct{ id, title string }
+type chatItem struct{ id, title, searchText string }
 
 type model struct {
+	searching                                   bool
+	searchQuery, searchError, searchPreviousID  string
 	trackReceipt                                func(string, string, uint64, time.Time) (tea.Cmd, context.CancelFunc)
 	receiptCancel                               context.CancelFunc
 	receiptGeneration                           uint64
@@ -92,6 +94,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		if m.composing && !m.confirming {
 			m = m.appendDraft(msg.Content)
+		} else if m.searching && m.conversation == nil {
+			m = m.insertSearch(msg.Content)
 		}
 	case receiptLoaded:
 		return m.finishReceipt(msg)
@@ -125,15 +129,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.failed = msg.err != nil
 		if msg.err == nil {
-			var chosen string
-			if len(m.chats) > 0 {
-				chosen = m.chats[m.selected].id
-			}
+			chosen := m.selectedChatID()
 			m.chats = make([]chatItem, 0, min(len(msg.chats), domain.MaxConversationLimit))
 			for _, chat := range msg.chats[:min(len(msg.chats), domain.MaxConversationLimit)] {
-				m.chats = append(m.chats, chatItem{id: chat.ID, title: chat.Title})
+				m.chats = append(m.chats, chatItem{id: chat.ID, title: chat.Title, searchText: strings.ToLower(chat.Title + "\n" + strings.Join(chat.Participants, "\n"))})
 			}
-			for i, chat := range m.chats {
+			for i, chat := range m.visibleChats() {
 				if chat.id == chosen {
 					m.selected = i
 					break
@@ -144,12 +145,20 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.conversation != nil {
 			return m.updateConversation(msg)
 		}
-		if msg.String() == "enter" && len(m.chats) > 0 && m.open != nil {
-			chat := m.chats[m.selected]
+		chats := m.visibleChats()
+		if msg.String() == "enter" && len(chats) > 0 && m.open != nil {
+			chat := chats[m.selected]
 			m.conversation = &chat
 			return m.startHistory(nil)
 		}
+		if m.searching {
+			return m.updateSearch(msg)
+		}
 		switch msg.String() {
+		case "/":
+			m.searching = true
+			m.searchPreviousID = m.selectedChatID()
+			return m, nil
 		case "q", "esc", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
@@ -185,8 +194,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) visibleRows() int { return max(1, m.height-7) }
 
 func (m model) keepVisible() model {
-	m.selected = max(0, min(m.selected, len(m.chats)-1))
-	m.offset = max(0, min(m.offset, max(0, len(m.chats)-m.visibleRows())))
+	count := len(m.visibleChats())
+	m.selected = max(0, min(m.selected, count-1))
+	m.offset = max(0, min(m.offset, max(0, count-m.visibleRows())))
 	if m.selected < m.offset {
 		m.offset = m.selected
 	}
@@ -221,17 +231,22 @@ func (m model) View() tea.View {
 	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("#0A84FF"))
 	muted := lipgloss.NewStyle().Foreground(lipgloss.Color("#969DAA"))
 	selected := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#0A84FF")).Bold(true).Width(width)
+	subtitle := m.chatListSubtitle()
+	if m.searching {
+		subtitle = m.searchPrompt()
+	}
+	chats := m.visibleChats()
 	lines := []string{
 		accent.Bold(true).Render("Messages") + muted.Render("  /  Personal"),
-		muted.Render(m.chatListSubtitle()),
+		muted.Render(subtitle),
 		muted.Render(strings.Repeat("─", width)),
 	}
 	var rows []string
 	switch {
-	case len(m.chats) > 0:
-		end := min(len(m.chats), m.offset+m.visibleRows())
+	case len(chats) > 0:
+		end := min(len(chats), m.offset+m.visibleRows())
 		for i := m.offset; i < end; i++ {
-			title := displayText(m.chats[i].title)
+			title := displayText(chats[i].title)
 			if title == "" {
 				title = "[untitled chat]"
 			}
@@ -249,6 +264,8 @@ func (m model) View() tea.View {
 		rows = []string{muted.Render("Loading local chats…")}
 	case m.failed:
 		rows = []string{"Could not load local chats.", muted.Render("Run psst doctor to check access; r retries.")}
+	case m.searching && len(m.chats) > 0:
+		rows = []string{muted.Render("No matching chats.")}
 	default:
 		rows = []string{muted.Render("No locally synchronized chats. · r refresh")}
 	}
@@ -259,8 +276,11 @@ func (m model) View() tea.View {
 	lines = append(lines, rows...)
 	lines = append(lines, muted.Render(strings.Repeat("─", width)))
 	status := ""
-	if len(m.chats) > 0 {
-		status = fmt.Sprintf("%d / %d · Chat %s", m.selected+1, len(m.chats), displayText(m.chats[m.selected].id))
+	if len(chats) > 0 {
+		status = fmt.Sprintf("%d / %d · Chat %s", m.selected+1, len(chats), displayText(chats[m.selected].id))
+	}
+	if m.searching {
+		status = fmt.Sprintf("%d of %d chats", len(chats), len(m.chats))
 	}
 	if m.loading {
 		status = "Loading local chats…"
@@ -270,7 +290,14 @@ func (m model) View() tea.View {
 			status = "Refresh failed · showing previous results · r retries"
 		}
 	}
-	lines = append(lines, muted.Render(ansi.Truncate(status, width, "…")), muted.Render("↑↓/jk move · Enter open · r refresh · q quit"))
+	footer := "↑↓/jk move · Enter open · / search · r refresh · q quit"
+	if m.searching {
+		footer = "↑↓ move · Enter open · Esc clear"
+		if m.searchError != "" {
+			status = m.searchError
+		}
+	}
+	lines = append(lines, muted.Render(ansi.Truncate(status, width, "…")), muted.Render(footer))
 	for i, line := range lines {
 		lines[i] = "  " + ansi.Truncate(line, width, "…")
 	}

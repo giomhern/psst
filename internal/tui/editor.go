@@ -9,10 +9,10 @@ import (
 	"github.com/rivo/uniseg"
 )
 
-// draftBoundary returns the preceding boundary, or the first boundary at or
-// after position when forward is true. Scanning the whole bounded draft keeps
+// graphemeBoundary returns the preceding boundary, or the first boundary at or
+// after position when forward is true. Scanning the whole bounded input keeps
 // context-dependent clusters (such as regional-indicator pairs) intact.
-func draftBoundary(text string, position int, forward bool) int {
+func graphemeBoundary(text string, position int, forward bool) int {
 	if position <= 0 {
 		return 0
 	}
@@ -123,7 +123,7 @@ func (m model) deleteDraft(start, end int) model {
 	m.draft = m.draft[:start] + m.draft[end:]
 	m.draftCursor = start
 	if start > 0 {
-		m.draftCursor = draftBoundary(m.draft, start, true)
+		m.draftCursor = graphemeBoundary(m.draft, start, true)
 	}
 	m.draftError = ""
 	return m

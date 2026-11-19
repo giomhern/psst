@@ -28,7 +28,7 @@ func (m model) appendDraft(text string) model {
 		return m
 	}
 	m.draft = candidate
-	m.draftCursor = draftBoundary(candidate, m.draftCursor+len(text), true)
+	m.draftCursor = graphemeBoundary(candidate, m.draftCursor+len(text), true)
 	m.draftError = ""
 	m = m.revealDraftCursor()
 	return m
@@ -84,9 +84,9 @@ func (m model) updateComposer(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.draftError = ""
 		m.composeOffset = 0
 	case "left":
-		m.draftCursor = draftBoundary(m.draft, m.draftCursor, false)
+		m.draftCursor = graphemeBoundary(m.draft, m.draftCursor, false)
 	case "right":
-		m.draftCursor = draftBoundary(m.draft, m.draftCursor+1, true)
+		m.draftCursor = graphemeBoundary(m.draft, m.draftCursor+1, true)
 	case "ctrl+left", "alt+left", "alt+b":
 		m.draftCursor = draftWord(m.draft, m.draftCursor, false)
 	case "ctrl+right", "alt+right", "alt+f":
@@ -104,9 +104,9 @@ func (m model) updateComposer(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "down":
 		m.draftCursor = draftVertical(m.draft, m.draftCursor, true)
 	case "backspace":
-		m = m.deleteDraft(draftBoundary(m.draft, m.draftCursor, false), m.draftCursor)
+		m = m.deleteDraft(graphemeBoundary(m.draft, m.draftCursor, false), m.draftCursor)
 	case "delete", "ctrl+d":
-		m = m.deleteDraft(m.draftCursor, draftBoundary(m.draft, m.draftCursor+1, true))
+		m = m.deleteDraft(m.draftCursor, graphemeBoundary(m.draft, m.draftCursor+1, true))
 	case "ctrl+w", "alt+backspace":
 		m = m.deleteDraft(draftWord(m.draft, m.draftCursor, false), m.draftCursor)
 	case "ctrl+u":

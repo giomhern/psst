@@ -393,8 +393,9 @@ reloaded. Deletions and edits outside that window are not reconciled, and matchi
 a local row never establishes delivery or proves which send attempt created it.
 No real Messages data is needed in tests or terminal previews.
 
-The minimum toolchain is Go 1.27.3, including the standard-library certificate
-verification update in [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809).
+The minimum toolchain is Go 1.27.4, including the standard-library fixes in
+[GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) and
+[GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859).
 CI selects the same patch version from `go.mod`.
 
 
@@ -447,3 +448,29 @@ Only the current send footer is tracked; this is not persistent receipt history.
 Synthetic tests cover selection ambiguity, rich text, WAL-visible changes, schema
 fallback, contradictory evidence, finite polling, cancellation, and shutdown joins.
 No real Messages access or automated real send was used to validate this change.
+
+
+## Searching loaded chats
+
+`search.go` derives a filtered slice from the bounded `model.chats` snapshot;
+it never replaces that snapshot or calls a database/Contacts loader. A Go slice
+is a view over an underlying array: the unfiltered path returns the existing
+slice, while filtering builds a slice of matching chat values. Neither path
+mutates the source chats. The selected index and viewport refer to this derived
+list, and opening copies the selected chat so filtering cannot change the active
+conversation's identity. Selection follows chat ID across query edits and
+in-flight refreshes; Esc clears the query and restores the chosen ID in the full
+list, or the pre-search ID if there were no matches.
+
+Search matches lowercased title and available participant identifiers with a
+substring check. It does not normalize phone formatting, accents, or Unicode
+normalization forms, or search older/unloaded chats. Named groups have only their
+title available; unnamed chats retain up to five participant identifiers from the
+existing summary contract. The search string is bounded to 200 code points,
+rejects controls/newlines/invalid UTF-8 atomically, and is escaped before rendering.
+The shared `graphemeBoundary` function supports both draft and search backspace.
+Search state changes only in Update; it adds no workers, timers, or dependencies.
+List refresh ticks pause while search is active, but existing reads can complete.
+Opening a result resumes normal conversation polling; returning keeps the query.
+Tests use synthetic names and identifiers and cover filtered opening, shortcut
+handling, Unicode deletion, refresh/resize safety, and invalid paste.
